@@ -1,0 +1,20 @@
+.{
+    .name = "zigger",
+    .version = "0.0.1",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "walk.zig",
+        "terrain.zig",
+        "dungeon.zig",
+        "object.zig",
+        "chat.zig",
+        "main.py",
+        "index.html",
+        "README.md",
+        "LICENSE",
+        "setup.py",
+        "pyproject.toml",
+    },
+    .dependencies = .{},
+}

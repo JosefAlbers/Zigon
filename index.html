@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Terrain WASM</title>
+    <style>
+        body {
+            background: #333;
+            color: white;
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+        #controls {
+            margin: 20px auto;
+            max-width: 600px;
+        }
+        .control-group {
+            margin: 15px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        input[type="range"] {
+            width: 200px;
+        }
+        label {
+            min-width: 100px;
+            text-align: right;
+        }
+        .value-display {
+            min-width: 50px;
+            text-align: left;
+            font-weight: bold;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #4a4a4a;
+            color: white;
+            border: 1px solid white;
+            border-radius: 4px;
+        }
+        button:hover {
+            background: #5a5a5a;
+        }
+    </style>
+</head>
+<body>
+    <h1>Terrain Zigger WASM</h1>
+    
+    <div id="controls">
+        <div class="control-group">
+            <label for="waterLevel">Water Level:</label>
+            <input type="range" id="waterLevel" min="0" max="1" step="0.01" value="0.2">
+            <span class="value-display" id="waterLevelValue">0.20</span>
+        </div>
+        <div class="control-group">
+            <label for="sandLevel">Sand Level:</label>
+            <input type="range" id="sandLevel" min="0" max="1" step="0.01" value="0.3">
+            <span class="value-display" id="sandLevelValue">0.30</span>
+        </div>
+        <div class="control-group">
+            <button onclick="render()">Regenerate Terrain</button>
+        </div>
+    </div>
+
+    <canvas id="canvas" width="512" height="512" style="border: 1px solid white; image-rendering: pixelated;"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const size = 128;
+        const textureScale = 4;
+
+        let wasmExports = null;
+        let waterLevel = 0.2;
+        let sandLevel = 0.3;
+
+        const waterSlider = document.getElementById('waterLevel');
+        const sandSlider = document.getElementById('sandLevel');
+        const waterDisplay = document.getElementById('waterLevelValue');
+        const sandDisplay = document.getElementById('sandLevelValue');
+        const TREE_MAX_HEIGHT = 0.8;
+
+        waterSlider.addEventListener('input', (e) => {
+            waterLevel = parseFloat(e.target.value);
+            waterDisplay.textContent = waterLevel.toFixed(2);
+            
+            if (sandLevel <= waterLevel) {
+                sandLevel = waterLevel + 0.05;
+                sandSlider.value = sandLevel;
+                sandDisplay.textContent = sandLevel.toFixed(2);
+            }
+            
+            render();
+        });
+
+        sandSlider.addEventListener('input', (e) => {
+            sandLevel = parseFloat(e.target.value);
+            sandDisplay.textContent = sandLevel.toFixed(2);
+            
+            if (sandLevel <= waterLevel) {
+                waterLevel = sandLevel - 0.05;
+                waterSlider.value = waterLevel;
+                waterDisplay.textContent = waterLevel.toFixed(2);
+            }
+            
+            render();
+        });
+
+        fetch('zig-out/bin/terrain.wasm')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.arrayBuffer();
+            })
+            .then(bytes => WebAssembly.instantiate(bytes, { env: {} }))
+            .then(result => {
+                wasmExports = result.instance.exports;
+                console.log('WASM loaded successfully!');
+                console.log('Exports:', Object.keys(wasmExports));
+                render();
+            })
+            .catch(err => {
+                console.error('Failed to load WASM:', err);
+                document.body.innerHTML += `<p style="color: red;">Error: ${err.message}</p>`;
+            });
+
+        function render() {
+            if (!wasmExports) return;
+            
+            const seed = Math.floor(Math.random() * 100000);
+            wasmExports.generate_terrain_wasm(seed, size);
+            
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    const height = wasmExports.get_terrain_height_wasm(x, y, size);
+                    
+                    let r, g, b;
+                    if (height < waterLevel) { 
+                        const depth = 1 - (height / waterLevel);
+                        b = Math.floor(150 + depth * 105);
+                        r = 0; 
+                        g = 0;
+                    }
+                    else if (height < sandLevel) { 
+                        r = 200; 
+                        g = 200; 
+                        b = 100; 
+                    }
+                    else { 
+                        r = 0; 
+                        g = Math.floor(100 + (height * 155)); 
+                        b = 0; 
+                    }
+
+                    ctx.fillStyle = `rgb(${r},${g},${b})`;
+                    ctx.fillRect(x * textureScale, y * textureScale, textureScale, textureScale);
+                }
+            }
+            
+            wasmExports.generate_foliage_wasm(seed, size);
+            drawTrees();
+        }
+        
+        function drawTrees() {
+            const count = wasmExports.get_foliage_len();
+            if (count === 0) return;
+
+            const ptr = wasmExports.get_foliage_ptr();
+            
+            if (!wasmExports.memory || !wasmExports.memory.buffer) {
+                console.error('WASM memory not accessible');
+                return;
+            }
+            
+            const memory = new Float32Array(wasmExports.memory.buffer);
+            const dataStart = ptr / 4;
+            
+            if (dataStart + count * 2 > memory.length) {
+                console.error('Tree data exceeds memory bounds');
+                return;
+            }
+            
+            const trees = memory.subarray(dataStart, dataStart + count * 2);
+            ctx.fillStyle = '#1a4d1a';
+
+            for (let i = 0; i < count; i++) {
+                const tx = trees[i * 2];
+                const ty = trees[i * 2 + 1];
+
+                const treeX = Math.floor(tx);
+                const treeY = Math.floor(ty);
+                
+                if (treeX >= 0 && treeX < size && treeY >= 0 && treeY < size) {
+                    const terrainHeight = wasmExports.get_terrain_height_wasm(treeX, treeY, size);
+                    
+                    if (terrainHeight >= sandLevel+0.1 && terrainHeight <= TREE_MAX_HEIGHT) {
+                        ctx.fillRect(
+                            (tx * textureScale) - 2, 
+                            (ty * textureScale) - 2, 
+                            4, 
+                            4
+                        );
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>

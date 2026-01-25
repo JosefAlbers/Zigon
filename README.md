@@ -1,61 +1,52 @@
-# TerrainZigger
-
-TerrainZigger is a 3D terrain generator written in Zig using the Raylib library. It creates procedurally generated landscapes with dynamic water features, offering an interactive 3D visualization.
+# TerrainZigger: Procedural 3D World Builder
 
 ![TerrainZigger](https://raw.githubusercontent.com/JosefAlbers/TerrainZigger/main/assets/terrain_zigger.gif)
 
+A lightweight, cross-platform 3D terrain generator and game engine built in Zig, with Python scripting for dynamic behaviors like NPC pathing, dialogues, and interactions. Powered by Raylib for rendering procedural worlds from noise to explorable scenes in minutes.
+
+## Why ZigTerrain?
+
+- **Performance-First**: Zig's safety + speed for real-time 3D.
+- **Scriptable**: Python integration via ctypes for AI, events, and mods.
+- **Procedural Magic**: Perlin/FBM terrain, foliage via Poisson Disk, and dungeons generated with wave function collapse.
+- **Interactive**: Raycasting, pathfinding, dialogues.
+
 ## Features
 
-- Procedural terrain generation using Fractional Brownian Motion (FBM)
-- Real-time 3D rendering with Raylib
-- Interactive camera controls for exploring the terrain
-- Dynamic water level adjustment
-- On-the-fly terrain regeneration
-- Customizable terrain parameters
+- Procedural terrain gen (noise, base maps, biomes)
+- Object spawning/movement (humans, birds, rain, beams)
+- User controls: Orbit/FPV camera, selection, spawning
+- Python hooks: Callbacks for clicks, chats, ticks
+- Exports: WASM-ready for web demos
+
+## Quick Start
 
 ## Prerequisites
 
 To build and run TerrainZigger, you'll need:
 
-- [Zig](https://ziglang.org/) (version 0.13.0 recommended)
+- [Zig](https://ziglang.org/)
 - [Raylib](https://www.raylib.com/)
 
-## Building and Running
+### Build & Run
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/JosefAlbers/TerrainZigger.git
-   cd TerrainZigger
-   ```
+`zig build run`: Builds and runs the main game (walk.zig).
+`zig build run-chat`: Runs the standalone Chat UI test (chat.zig).
+`zig build run-object`: Runs the 3D Object/Primitive viewer (object.zig).
+`zig build run-dungeon`: Runs the Dungeon generation demo (dungeon.zig).
+`zig build run-wasm`: WebAssembly compilation of terrain.zig (demo index.html).
+`pip install zigger`: Python scripting (see below)
 
-2. Build the project:
-   ```
-   zig build-exe terrain_zigger.zig -lc $(pkg-config --libs --cflags raylib)
-   ```
+### Usage Example (Python)
 
-3. Run the executable:
-   ```
-   ./terrain_zigger
-   ```
+```python
+from zigger import Zigger
 
-## Controls
-
-- **R** or **Right Mouse Button**: Regenerate terrain
-- **Left Mouse Button**: Rotate camera
-- **Mouse Wheel**: Zoom in/out
-- **Z**: Reset camera
-- **, (Comma)**: Decrease water level
-- **. (Period)**: Increase water level
-
-## Customization
-
-You can adjust various parameters in the `terrain_zigger.zig` file to customize the terrain generation:
-
-- `TERRAIN_SIZE`: Changes the size of the terrain grid
-- `INITIAL_WATER_LEVEL`: Sets the initial height of the water plane
-- `CUBE_SIZE`: Modifies the size of individual terrain cubes
-
-Feel free to experiment with the `fbm` function parameters in `generateTerrain` to create different terrain styles.
+game = Zigger(size=terrain_size) 
+game.load_map(get_base_map(terrain_size, 'N42W071')) # Procedural or real topo data
+game.spawn(2, 20, 20)                                # Spawn object (house)
+game.start()                                         # Start game
+```
 
 ## Contributing
 
@@ -63,13 +54,9 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is open source and available under the [MIT License](LICENSE).
+This project is open source and available under the [Apache License 2.0](LICENSE).
 
 ## Acknowledgments
 
 - Terrain generation algorithm inspired by [Perlin Noise](https://en.wikipedia.org/wiki/Perlin_noise)
 - 3D rendering made possible by [Raylib](https://www.raylib.com/)
-
----
-
-Happy terrain generating! 🏞️
