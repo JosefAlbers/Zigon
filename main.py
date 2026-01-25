@@ -1,11 +1,9 @@
+# {{{ INIT
 # Copyright 2026 J Joe
-
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-
 #     http://www.apache.org/licenses/LICENSE-2.0
-
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -21,6 +19,36 @@ import math
 import gzip
 import requests
 import numpy as np
+
+def get_base_map(out_size, tile=None):
+    if tile in ['gradient', 'sinusoid', 'pyramid']:
+        x = np.linspace(-1, 1, out_size)
+        y = np.linspace(-1, 1, out_size)
+        xx, yy = np.meshgrid(x, y)
+        if tile == 'gradient': return xx
+        if tile == 'sinusoid': return np.sin(xx) * np.cos(yy)
+        if tile == 'pyramid': return 1 - np.maximum(np.abs(xx), np.abs(yy))
+    elif tile is None:
+        tile = "N42W071"
+    lat_band = tile[:3]
+    url = f"https://s3.amazonaws.com/elevation-tiles-prod/skadi/{lat_band}/{tile}.hgt.gz"
+    raw = gzip.decompress(requests.get(url).content)
+    arr = np.frombuffer(raw, dtype=">i2")
+    n = int(math.sqrt(arr.size))
+    h = arr.reshape(n, n).astype(np.float32)
+    h[h < -1000] = np.nan
+    ys = np.linspace(0, n - 1, out_size)
+    xs = np.linspace(0, n - 1, out_size)
+    yi, xi = np.meshgrid(ys, xs, indexing='ij')
+    coords = np.array([yi, xi])
+    from scipy.ndimage import map_coordinates
+    out = map_coordinates(h, coords, order=1, mode='nearest', cval=np.nan)
+    mn = np.nanmin(out)
+    mx = np.nanmax(out)
+    return 0.4 + 0.3 * (out - mn) / (mx - mn)
+
+# }}} INIT
+# {{{ ZIG
 
 class Zigger:
     def __init__(self, size=128, seed=42):
@@ -49,8 +77,8 @@ class Zigger:
         self.CALLBACK_TYPE = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_int)
         self.lib.register_hook.argtypes = [self.CALLBACK_TYPE]
         self.lib.get_user_status.argtypes = [
-            ctypes.POINTER(ctypes.c_float), 
-            ctypes.POINTER(ctypes.c_float), 
+            ctypes.POINTER(ctypes.c_float),
+            ctypes.POINTER(ctypes.c_float),
             ctypes.POINTER(ctypes.c_float)
         ]
         self.lib.get_user_status.restype = ctypes.c_bool
@@ -59,8 +87,8 @@ class Zigger:
         self.lib.get_user_input.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
         self.lib.stop_dialogue.argtypes = []
         self.lib.get_last_click_position.argtypes = [
-            ctypes.POINTER(ctypes.c_float), 
-            ctypes.POINTER(ctypes.c_float), 
+            ctypes.POINTER(ctypes.c_float),
+            ctypes.POINTER(ctypes.c_float),
             ctypes.POINTER(ctypes.c_float)
         ]
         self.lib.get_selected_count.argtypes = []
@@ -68,11 +96,11 @@ class Zigger:
         self.lib.get_selected_ids.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_size_t]
         self.lib.set_selected_ids.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_size_t]
         self.lib.spawn_object.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_float, ctypes.c_float, ctypes.c_float]
-        self.lib.despawn_object.argtypes = [ctypes.c_int] # Add this
+        self.lib.despawn_object.argtypes = [ctypes.c_int]
         self.lib.get_object_position.argtypes = [
-            ctypes.c_int, 
-            ctypes.POINTER(ctypes.c_float), 
-            ctypes.POINTER(ctypes.c_float), 
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_float),
+            ctypes.POINTER(ctypes.c_float),
             ctypes.POINTER(ctypes.c_float)
         ]
         self.lib.get_object_position.restype = ctypes.c_bool
@@ -123,7 +151,7 @@ class Zigger:
         y = ctypes.c_float()
         z = ctypes.c_float()
         self.lib.get_last_click_position(ctypes.byref(x), ctypes.byref(y), ctypes.byref(z))
-        return (x.value, z.value, y.value) 
+        return (x.value, z.value, y.value)
 
     def start_dialogue(self, npc_id):
         self.lib.start_dialogue(npc_id)
@@ -172,7 +200,6 @@ class Zigger:
         if obj_id in self.all_obj_ids:
             self.lib.despawn_object(obj_id)
             self.all_obj_ids.remove(obj_id)
-            # Clean up pathing data if it exists
             if obj_id in self.object_paths: del self.object_paths[obj_id]
             if obj_id in self.path_indices: del self.path_indices[obj_id]
             if obj_id in self.object_loop: del self.object_loop[obj_id]
@@ -187,32 +214,8 @@ class Zigger:
     def set_obj_state(self, obj_id, state_val):
         self.lib.set_object_state(obj_id, float(state_val))
 
-def get_base_map(out_size, tile=None):
-    if tile in ['gradient', 'sinusoid', 'pyramid']:
-        x = np.linspace(-1, 1, out_size)
-        y = np.linspace(-1, 1, out_size)
-        xx, yy = np.meshgrid(x, y)
-        if tile == 'gradient': return xx
-        if tile == 'sinusoid': return np.sin(xx) * np.cos(yy)
-        if tile == 'pyramid': return 1 - np.maximum(np.abs(xx), np.abs(yy))
-    elif tile is None:
-        tile = "N42W071"
-    lat_band = tile[:3] 
-    url = f"https://s3.amazonaws.com/elevation-tiles-prod/skadi/{lat_band}/{tile}.hgt.gz"
-    raw = gzip.decompress(requests.get(url).content)
-    arr = np.frombuffer(raw, dtype=">i2")
-    n = int(math.sqrt(arr.size)) 
-    h = arr.reshape(n, n).astype(np.float32)
-    h[h < -1000] = np.nan
-    ys = np.linspace(0, n - 1, out_size)
-    xs = np.linspace(0, n - 1, out_size)
-    yi, xi = np.meshgrid(ys, xs, indexing='ij')
-    coords = np.array([yi, xi])
-    from scipy.ndimage import map_coordinates
-    out = map_coordinates(h, coords, order=1, mode='nearest', cval=np.nan)
-    mn = np.nanmin(out)
-    mx = np.nanmax(out)
-    return 0.4 + 0.3 * (out - mn) / (mx - mn)
+# }}} ZIG
+# {{{ OBJ
 
 class ObjManager:
     registry = {}
@@ -269,10 +272,13 @@ class ObjManager:
             return func
         return wrapper
 
+# }}} OBJ
+# {{{ RUN
+
 def demo(terrain_size=128):
     game = Zigger(size=terrain_size)
     game.load_map(get_base_map(terrain_size, 'gradient'))
-    
+
     # 0. Raw
     game.spawn(2, 20, 20)
     # 1. Move
@@ -280,7 +286,7 @@ def demo(terrain_size=128):
         npc = ObjManager(game, 6, 0 + i*2, 0)
         path = [(0 + i*2, 0, 0), (0 + i*2, 20, 0), (10 + i*2, 20, 0), (0 + i*2, 0, 0)]
         npc.set_path(path, speed=3.0, loop=True)
-    
+
     bird = ObjManager(game, 4, 64, 64, 20)
     bird_path = []
     import math
@@ -365,3 +371,5 @@ def demo(terrain_size=128):
 
 if __name__ == "__main__":
     demo(128)
+
+# }}} RUN

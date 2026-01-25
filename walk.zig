@@ -1,12 +1,9 @@
 //{{{ INIT
 // Copyright 2026 J Joe
-
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-
 //     http://www.apache.org/licenses/LICENSE-2.0
-
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -21,9 +18,11 @@ const ray = @cImport({
 });
 const terrain_gen = @import("terrain.zig");
 const object_gen = @import("object.zig");
+const dungeon_gen = @import("dungeon.zig");
 
-const WINDOW_WIDTH: i32 = 800;
-const WINDOW_HEIGHT: i32 = 600;
+const build_config = @import("config");
+const WINDOW_WIDTH: i32 = build_config.window_width;
+const WINDOW_HEIGHT: i32 = build_config.window_height;
 // const WINDOW_WIDTH: i32 = 1920;
 // const WINDOW_HEIGHT: i32 = 1000;
 const CUBE_BASE: f32 = 1.0;
@@ -71,8 +70,8 @@ const Map = struct {
 
         if (seed == 0) {
             // self.base_map = try terrain_gen.createBowlMap(allocator, size); //: v0
-            self.base_map = try getDungeon(allocator, seed, size, 4); //: v1
-        } else {
+            // self.base_map = try getDungeon(allocator, seed, size, 4); //: v1
+            // } else {
             self.base_map = null;
         }
 
@@ -121,7 +120,6 @@ const Map = struct {
 
         const v_count: i32 = @intCast(mesh.vertexCount);
         ray.UpdateMeshBuffer(mesh, 0, mesh.vertices, v_count * 3 * @sizeOf(f32), 0);
-
         self.update();
         self.seed = seed;
     }
@@ -134,17 +132,13 @@ const Map = struct {
             const new_image = ray.GenImageColor(new_w, new_w, ray.BLANK);
             const pixels: []terrain_gen.Color = @as([*]terrain_gen.Color, @ptrCast(@alignCast(new_image.data)))[0..@intCast(new_w * new_w)];
             terrain_gen.writeTextureBuffer(pixels, self.terrain, self.size, self.texture_scale, self.water_level, CUBE_HEIGHT);
-
             const new_texture = ray.LoadTextureFromImage(new_image);
             ray.SetTextureFilter(new_texture, ray.TEXTURE_FILTER_POINT);
-
             if (self.model.materialCount > 0) {
                 self.model.materials[0].maps[ray.MATERIAL_MAP_DIFFUSE].texture = new_texture;
             }
-
             if (self.image.data != null) ray.UnloadImage(self.image);
             if (self.texture.id > 0) ray.UnloadTexture(self.texture);
-
             self.image = new_image;
             self.texture = new_texture;
         } else {
@@ -182,6 +176,17 @@ const Map = struct {
         return .{ w_xz[0], w_y, w_xz[1] };
     }
 };
+
+export fn load_map_data(data: [*]const f32, len: usize) void {
+    if (lib_instance) |state| {
+        if (state.map.base_map) |base| {
+            if (len == base.len) {
+                @memcpy(base, data[0..len]);
+                state.map.spawn(state.map.seed) catch {};
+            }
+        }
+    }
+}
 
 //}}} MAP
 //{{{ OBJ
@@ -322,7 +327,6 @@ const Input = struct {
         input: union(enum) { key: i32, mouse: i32 },
         trigger: enum { Press, Hold, Release },
         handler: *const fn (self: *Input) void,
-
         pub fn isTriggered(self: @This()) bool {
             switch (self.input) {
                 .key => |k| switch (self.trigger) {
@@ -683,10 +687,8 @@ const Chat = struct {
         errdefer chat.deinit();
         chat.loadPortrait("assets/face_placeholder.png");
         try chat.setNpcText("Greetings.");
-
         const tex_w = @as(f32, @floatFromInt(frozen_bg.texture.width));
         const tex_h = @as(f32, @floatFromInt(frozen_bg.texture.height));
-
         return Chat{
             .chat = chat,
             .frozen_bg = frozen_bg,
@@ -732,7 +734,6 @@ export fn start_dialogue(npc_id: i32) void {
         state.map.draw();
         ray.EndMode3D();
         ray.EndTextureMode();
-
         state.chat = Chat.init(state.allocator, frozen_bg) catch |err| {
             std.debug.print("Failed to init Chat: {}\n", .{err});
             ray.UnloadRenderTexture(frozen_bg);
@@ -773,15 +774,15 @@ export fn stop_dialogue() void {
 //}}} CHAT
 //{{{ MAIN
 
-fn getDungeon(allocator: std.mem.Allocator, seed: u64, size: usize, magnify: usize) ![]f32 {
+fn getDungeon(allocator: std.mem.Allocator, seed: u64, size: usize, magnify: usize, dungeon_type: @import("dungeon.zig").DungeonType) ![]f32 {
     const dungeon = @import("dungeon.zig");
     if (magnify == 0 or size % magnify != 0) return error.InvalidMagnification;
     const small_size = size / magnify;
     var wfc_result = try dungeon.spawn(allocator, .{
         .output_width = small_size,
         .output_height = small_size,
-        .max_attempts = 1,
-        .dungeon_type = .rogue,
+        .max_attempts = 5,
+        .dungeon_type = dungeon_type,
         .seed = seed,
     });
     defer wfc_result.deinit(allocator);
@@ -793,8 +794,13 @@ fn getDungeon(allocator: std.mem.Allocator, seed: u64, size: usize, magnify: usi
         while (x < size) : (x += 1) {
             const sx = x / magnify;
             const sy = y / magnify;
-
-            large_map[y * size + x] = @as(f32, @floatFromInt(1 - wfc_result.map[sy * small_size + sx])) * 0.2;
+            const cell_value = wfc_result.map[sy * small_size + sx];
+            const height: f32 = switch (cell_value) {
+                0 => 0.0,
+                1 => 0.2,
+                else => 0.1,
+            };
+            large_map[y * size + x] = height;
         }
     }
     return large_map;
@@ -806,18 +812,25 @@ pub fn main() !void {
     ray.InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Terrain Zigger");
     defer ray.CloseWindow();
     ray.SetTargetFPS(60);
-    var state = try State.create(gpa.allocator(), 128, getSeed()); //: default
-    // var state = try State.create(gpa.allocator(), 128, 0); //: option 1 (dungeon)
+    const seed = if (build_config.init_seed >= 0)
+        build_config.init_seed
+        // else if (build_config.dungeon_type >= 0)
+        //     0
+    else
+        getSeed();
+    var state = try State.create(gpa.allocator(), build_config.map_size, seed);
     defer state.destroy();
     if (terrain_gen.loadBaseMapFromFile(state.allocator, "map.txt", state.map.size)) |map| {
         if (state.map.base_map) |base| state.allocator.free(base);
         state.map.base_map = map;
         try state.map.spawn(state.map.seed);
     } else |_| {
-        const wfc_map = try getDungeon(state.allocator, state.map.seed, state.map.size, 4);
-        if (state.map.base_map) |base| state.allocator.free(base);
-        state.map.base_map = wfc_map;
-        try state.map.spawn(state.map.seed);
+        if (build_config.dungeon_type >= 0) {
+            const wfc_map = try getDungeon(state.allocator, state.map.seed, state.map.size, build_config.dungeon_magnify, @enumFromInt(build_config.dungeon_type));
+            if (state.map.base_map) |base| state.allocator.free(base);
+            state.map.base_map = wfc_map;
+            try state.map.spawn(state.map.seed);
+        }
     }
     while (!ray.WindowShouldClose()) {
         try state.update();
@@ -906,9 +919,6 @@ const State = struct {
     }
 };
 
-//}}} STATE
-//{{{ EXPORTS
-
 var lib_instance: ?*State = null;
 
 export fn init_state(seed: u64, size: i32) void {
@@ -931,17 +941,6 @@ export fn close_state() void {
     ray.CloseWindow();
 }
 
-export fn load_map_data(data: [*]const f32, len: usize) void {
-    if (lib_instance) |state| {
-        if (state.map.base_map) |base| {
-            if (len == base.len) {
-                @memcpy(base, data[0..len]);
-                state.map.spawn(state.map.seed) catch {};
-            }
-        }
-    }
-}
-
 export fn register_hook(cb: *const fn (i32, i32) callconv(.C) void) void {
     if (lib_instance) |state| state.hook = cb;
 }
@@ -956,4 +955,4 @@ export fn start_loop() void {
     }
 }
 
-//}}} EXPORTS
+//}}} STATE
