@@ -17,7 +17,7 @@ class BuildZig(build):
 
 setup(
     name="zigger",
-    version="0.0.1a0",
+    version="0.0.1a1",
     author="J Joe",
     author_email="albersj66@gmail.com",
     long_description=open('README.md', encoding='utf-8').read(),

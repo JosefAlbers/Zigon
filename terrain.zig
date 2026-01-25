@@ -1,12 +1,9 @@
 //{{{ INIT
 // Copyright 2026 J Joe
-
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-
 //     http://www.apache.org/licenses/LICENSE-2.0
-
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,6 +14,7 @@ const std = @import("std");
 
 //}}} INIT
 //{{{ FBM
+
 fn fade(t: f32) f32 {
     return t * t * t * (t * (t * 6 - 15) + 10);
 }
@@ -80,7 +78,6 @@ fn fbm(x: f32, y: f32, octaves: u8, persistence: f32, lacunarity: f32, scale: f3
         amplitude *= persistence;
         frequency *= lacunarity;
     }
-
     return value;
 }
 
@@ -236,7 +233,6 @@ pub fn getWeightedAverageHeight(terrain: []const f32, x: f32, z: f32, radius: f3
         while (dx <= 1.0) : (dx += 1.0) {
             const neighbor_x = center_x + dx;
             const neighbor_z = center_z + dz;
-
             if (neighbor_x >= 0 and neighbor_x < f_size and neighbor_z >= 0 and neighbor_z < f_size) {
                 const diff_x = neighbor_x - x;
                 const diff_z = neighbor_z - z;
@@ -387,14 +383,12 @@ fn hsvToRgba(h: f32, s: f32, v: f32) Color {
 
 fn getTerrainColor(height: f32, water_level: f32, cube_height: f32) Color {
     const v = (height - water_level) / cube_height;
-
     if (v < -0.4) return hsvToRgba(40.0, 0.5, 0.0);
     if (v < 0.05) return hsvToRgba(40.0, 0.5, 0.8 + v * 2.0);
     if (v < 0.15) return hsvToRgba(95.0, 0.55 + v, 0.625 - v / 2.0);
     if (v < 0.35) return hsvToRgba(110.0, 0.7, 0.5 - (v - 0.15) * 0.5);
     if (v < 0.55) return hsvToRgba(30.0, 0.6 - (v - 0.35) * 1.5, 0.3 + (v - 0.35) * 1.5);
     if (v < 1.55) return hsvToRgba(210.0, 0.1, 1.55 - v);
-
     return hsvToRgba(210.0, 0.1, 0.0);
 }
 

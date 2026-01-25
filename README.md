@@ -2,50 +2,155 @@
 
 ![TerrainZigger](https://raw.githubusercontent.com/JosefAlbers/TerrainZigger/main/assets/terrain_zigger.gif)
 
-A lightweight, cross-platform 3D terrain generator and game engine built in Zig, with Python scripting for dynamic behaviors like NPC pathing, dialogues, and interactions. Powered by Raylib for rendering procedural worlds from noise to explorable scenes in minutes.
+![zig build run -Ddungeon-type=4](https://raw.githubusercontent.com/JosefAlbers/TerrainZigger/main/assets/maze.png)
 
-## Why ZigTerrain?
+A lightweight, cross-platform 3D terrain generator and game engine built in Zig with Python scripting support. Create procedural worlds—from noise-based terrain to wave function collapse dungeons—and bring them to life with dynamic NPCs, pathfinding, and interactive dialogues. Powered by Raylib for high-performance 3D rendering.
 
-- **Performance-First**: Zig's safety + speed for real-time 3D.
-- **Scriptable**: Python integration via ctypes for AI, events, and mods.
-- **Procedural Magic**: Perlin/FBM terrain, foliage via Poisson Disk, and dungeons generated with wave function collapse.
-- **Interactive**: Raycasting, pathfinding, dialogues.
+## Why TerrainZigger?
+
+- **Performance-First**: Zig's compile-time safety meets runtime speed for smooth real-time 3D
+- **Scriptable**: Python integration via ctypes for AI behaviors, events, and gameplay logic
+- **Procedural Generation**: Perlin/FBM noise terrain, Poisson disk foliage distribution, and wave function collapse dungeons
+- **Interactive**: Built-in raycasting, pathfinding, unit selection, and dialogue system
+- **Cross-Platform**: Runs on macOS, Linux, and Windows with configurable build options
 
 ## Features
 
-- Procedural terrain gen (noise, base maps, biomes)
-- Object spawning/movement (humans, birds, rain, beams)
-- User controls: Orbit/FPV camera, selection, spawning
-- Python hooks: Callbacks for clicks, chats, ticks
-- Exports: WASM-ready for web demos
+- **Terrain Generation**: Procedural noise-based terrain with support for custom base maps and biomes
+- **Dungeon Generation**: Six dungeon archetypes (rooms, rogue, cavern, maze, labyrinth, arena) using wave function collapse
+- **Object System**: Spawn and animate humans, birds, particles, and 3D primitives
+- **Camera Modes**: Orbit camera for overview, first-person mode for exploration
+- **User Interactions**: Click-to-select units, drag selection boxes, ground targeting
+- **Python Hooks**: Event callbacks for clicks, chat submissions, and game ticks
+- **Web Export**: WASM-ready for browser-based demos
 
 ## Quick Start
 
-## Prerequisites
-
-To build and run TerrainZigger, you'll need:
+### Prerequisites
 
 - [Zig](https://ziglang.org/)
 - [Raylib](https://www.raylib.com/)
 
-### Build & Run
+### Installation
 
-`zig build run`: Builds and runs the main game (walk.zig).
-`zig build run-chat`: Runs the standalone Chat UI test (chat.zig).
-`zig build run-object`: Runs the 3D Object/Primitive viewer (object.zig).
-`zig build run-dungeon`: Runs the Dungeon generation demo (dungeon.zig).
-`zig build run-wasm`: WebAssembly compilation of terrain.zig (demo index.html).
-`pip install zigger`: Python scripting (see below)
+```bash
+# Clone the repository
+git clone https://github.com/JosefAlbers/TerrainZigger.git
+cd TerrainZigger
 
-### Usage Example (Python)
+# Build and run the main application
+zig build run
+
+# For Python scripting support
+pip install zigger
+```
+
+### Build Commands
+
+| Command | Description |
+|---------|-------------|
+| `zig build run` | Main terrain application |
+| `zig build run-chat` | Standalone chat UI test |
+| `zig build run-object` | 3D object/primitive viewer |
+| `zig build run-dungeon` | Dungeon generation demo |
+
+### Build Options
+
+Customize your build with runtime configuration options:
+
+```bash
+# Random terrain (default)
+zig build run
+
+# Rogue dungeon with custom seed
+zig build run -Ddungeon-type=1 -Dseed=12345
+
+# Large cavern map with bigger window
+zig build run -Ddungeon-type=2 -Dmap-size=256 -Dwindow-width=1920 -Dwindow-height=1080
+
+# Arena with custom magnification
+zig build run -Ddungeon-type=5 -Ddungeon-magnify=8
+```
+
+**Available Options:**
+- `-Dmap-size=<size>` - Terrain grid size (default: 128)
+- `-Ddungeon-type=<type>` - Dungeon archetype: -1=none, 0=rooms, 1=rogue, 2=cavern, 3=maze, 4=labyrinth, 5=arena (default: -1)
+- `-Ddungeon-magnify=<factor>` - Dungeon upscaling factor (default: 4)
+- `-Dseed=<number>` - Initial random seed (0=timestamp, default: 0)
+- `-Dwindow-width=<pixels>` - Window width (default: 800)
+- `-Dwindow-height=<pixels>` - Window height (default: 600)
+- `-Draylib-include=<path>` - Custom raylib include directory
+- `-Draylib-lib=<path>` - Custom raylib library directory
+
+### Cross-Platform Setup
+
+**macOS (Homebrew):**
+```bash
+brew install raylib
+zig build run -Draylib-include=/opt/homebrew/include -Draylib-lib=/opt/homebrew/lib
+```
+
+**Linux:**
+```bash
+sudo apt install libraylib-dev  # Debian/Ubuntu
+zig build run -Draylib-include=/usr/include -Draylib-lib=/usr/lib
+```
+
+**Windows (MSYS2):**
+```bash
+pacman -S mingw-w64-x86_64-raylib
+zig build run -Draylib-include=C:/msys64/mingw64/include -Draylib-lib=C:/msys64/mingw64/lib
+```
+
+## Python Integration
+
+Use the `zigger` Python package to script behaviors, load real-world topography, and control the game:
 
 ```python
 from zigger import Zigger
 
-game = Zigger(size=terrain_size) 
-game.load_map(get_base_map(terrain_size, 'N42W071')) # Procedural or real topo data
-game.spawn(2, 20, 20)                                # Spawn object (house)
-game.start()                                         # Start game
+# Initialize with custom terrain size
+game = Zigger(size=128)
+
+# Load procedural or real topographic data
+game.load_map(get_base_map(128, 'N42W071'))
+
+# Spawn objects (type_id: 0=human, 1=bird, 2=house, etc.)
+game.spawn(object_id=1, type_id=0, x=64, z=64, y_offset=0.5)
+
+# Register event callbacks
+@game.on_click
+def handle_click(x, y, z):
+    print(f"Ground clicked at: {x}, {y}, {z}")
+
+# Start the game loop
+game.start()
+```
+
+## Controls
+
+- **H** - Toggle help overlay
+- **Right Mouse** - Regenerate terrain with new seed
+- **Left Mouse** - Rotate camera (or select units with Shift held)
+- **Mouse Wheel** - Zoom in/out
+- **Middle Mouse** - Toggle first-person mode
+- **WASD** - Move in first-person mode
+- **Z** - Reset camera to initial position
+- **,** / **.** - Decrease/increase water level
+- **[** / **]** - Decrease/increase terrain roughness
+- **F** / **C** - Increase/decrease texture scale
+- **D** / **N** - Lighter/darker sky
+
+## Project Structure
+
+```
+TerrainZigger/
+├── walk.zig          # Main application and game state
+├── terrain.zig       # Procedural terrain generation
+├── dungeon.zig       # Wave function collapse dungeon generator
+├── object.zig        # 3D object rendering and animation
+├── chat.zig          # Dialogue system UI
+└── build.zig         # Build configuration
 ```
 
 ## Contributing
@@ -54,9 +159,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is open source and available under the [Apache License 2.0](LICENSE).
+This project is licensed under the [Apache License 2.0](LICENSE).
 
 ## Acknowledgments
 
-- Terrain generation algorithm inspired by [Perlin Noise](https://en.wikipedia.org/wiki/Perlin_noise)
-- 3D rendering made possible by [Raylib](https://www.raylib.com/)
+- Terrain generation inspired by [Perlin Noise](https://en.wikipedia.org/wiki/Perlin_noise) and [FastNoiseLite](https://github.com/Auburn/FastNoiseLite)
+- Dungeon generation using [Wave Function Collapse](https://github.com/mxgmn/WaveFunctionCollapse)
+- 3D rendering powered by [Raylib](https://www.raylib.com/)
+- Zig programming language by [Zig Software Foundation](https://ziglang.org/)
