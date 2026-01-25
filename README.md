@@ -2,7 +2,6 @@
 
 ![TerrainZigger](https://raw.githubusercontent.com/JosefAlbers/TerrainZigger/main/assets/terrain_zigger.gif)
 
-![zig build run -Ddungeon-type=4](https://raw.githubusercontent.com/JosefAlbers/TerrainZigger/main/assets/maze.png)
 
 A lightweight, cross-platform 3D terrain generator and game engine built in Zig with Python scripting support. Create procedural worlds—from noise-based terrain to wave function collapse dungeons—and bring them to life with dynamic NPCs, pathfinding, and interactive dialogues. Powered by Raylib for high-performance 3D rendering.
 
@@ -81,6 +80,8 @@ zig build run -Ddungeon-type=5 -Ddungeon-magnify=8
 - `-Dwindow-height=<pixels>` - Window height (default: 600)
 - `-Draylib-include=<path>` - Custom raylib include directory
 - `-Draylib-lib=<path>` - Custom raylib library directory
+
+![zig build run -Ddungeon-type=4](https://raw.githubusercontent.com/JosefAlbers/TerrainZigger/main/assets/maze.png)
 
 ### Cross-Platform Setup
 
