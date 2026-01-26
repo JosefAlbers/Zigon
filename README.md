@@ -2,7 +2,6 @@
 
 ![TerrainZigger](https://raw.githubusercontent.com/JosefAlbers/TerrainZigger/main/assets/terrain_zigger.gif)
 
-
 A lightweight, cross-platform 3D terrain generator and game engine built in Zig with Python scripting support. Create procedural worlds—from noise-based terrain to wave function collapse dungeons—and bring them to life with dynamic NPCs, pathfinding, and interactive dialogues. Powered by Raylib for high-performance 3D rendering.
 
 ## Why TerrainZigger?
@@ -53,9 +52,54 @@ pip install zigger
 | `zig build run-object` | 3D object/primitive viewer |
 | `zig build run-dungeon` | Dungeon generation demo |
 
+```output
+Generating 30×30 dungeon using labyrinth archetype...
+Extracted 140 unique patterns
+Success on attempt 1 after 169 steps
+
+      ██  ██  ████████  ██  ██        ██    ██  ████  ██  ██
+██        ██  ██        ██████  ████  ████  ██    ██  ██
+██  ████████  ██  ██        ██    ██        ████  ██  ██████
+██  ██        ██████  ██████████████████      ██  ██  ██  ██
+██  ██  ██        ██                  ██  ██████  ██████  ██
+██  ██████  ████████████████████████  ██  ██  ██  ██      ██
+██      ██    ██                  ██  ██  ██  ██  ██  ██████
+██████  ████  ██████████████████████████  ██████  ██████
+    ██    ██      ██      ██  ██          ██      ██      ██
+████████████████  ██████████  ██████████████  ██████████████
+██            ██      ██  ██      ██  ██      ██      ██
+██  ████████        ████  ██████████  ██████████████  ██████
+██        ████████  ██    ██  ██      ██  ██      ██  ██  ██
+████████            ████████  ██████████  ██████  ██  ██
+      ██████████              ██  ██      ██  ██  ██  ██████
+  ██          ██  ██████████████  ████        ██  ██  ██  ██
+  ██████████████  ██      ██  ██    ██  ████████  ██████  ██
+        ██        ██████████  ████  ██    ██  ██  ██      ██
+██████  ██████        ██  ██    ██  ████████  ██████████████
+        ██  ██  ████████  ████  ██            ██
+██████████  ██    ██  ██        ████████████████████████████
+    ██  ██  ████████  ██████        ██            ██  ██
+██████  ██            ██  ██  ████████  ████████████  ██████
+██  ██        ██████████  ██████        ██            ██  ██
+██  ████████  ██  ██      ██      ██        ████████████
+██        ██  ██  ████        ██████  ████████
+████████████  ██    ██  ████████  ██    ██      ██████████
+      ██  ██  ████████████        ████  ██████████  ██
+  ██████  ██                ██          ██  ██      ████
+  ██  ██        ██████████████  ██████████  ████      ██  ██
+```
+
 ### Build Options
 
-Customize your build with runtime configuration options:
+**Available Options:**
+- `-Dmap-size=<size>` - Terrain grid size (default: 128)
+- `-Ddungeon-type=<type>` - Dungeon archetype: -1=none, 0=rooms, 1=rogue, 2=cavern, 3=maze, 4=labyrinth, 5=arena (default: -1)
+- `-Ddungeon-magnify=<factor>` - Dungeon upscaling factor (default: 4)
+- `-Dseed=<number>` - Initial random seed (0=timestamp, default: 0)
+- `-Dwindow-width=<pixels>` - Window width (default: 800)
+- `-Dwindow-height=<pixels>` - Window height (default: 600)
+- `-Draylib-include=<path>` - Custom raylib include directory
+- `-Draylib-lib=<path>` - Custom raylib library directory
 
 ```bash
 # Random terrain (default)
@@ -70,16 +114,6 @@ zig build run -Ddungeon-type=2 -Dmap-size=256 -Dwindow-width=1920 -Dwindow-heigh
 # Arena with custom magnification
 zig build run -Ddungeon-type=5 -Ddungeon-magnify=8
 ```
-
-**Available Options:**
-- `-Dmap-size=<size>` - Terrain grid size (default: 128)
-- `-Ddungeon-type=<type>` - Dungeon archetype: -1=none, 0=rooms, 1=rogue, 2=cavern, 3=maze, 4=labyrinth, 5=arena (default: -1)
-- `-Ddungeon-magnify=<factor>` - Dungeon upscaling factor (default: 4)
-- `-Dseed=<number>` - Initial random seed (0=timestamp, default: 0)
-- `-Dwindow-width=<pixels>` - Window width (default: 800)
-- `-Dwindow-height=<pixels>` - Window height (default: 600)
-- `-Draylib-include=<path>` - Custom raylib include directory
-- `-Draylib-lib=<path>` - Custom raylib library directory
 
 ![zig build run -Ddungeon-type=4](https://raw.githubusercontent.com/JosefAlbers/TerrainZigger/main/assets/maze.png)
 
@@ -114,15 +148,16 @@ from zigger import Zigger
 game = Zigger(size=128)
 
 # Load procedural or real topographic data
-game.load_map(get_base_map(128, 'N42W071'))
+game.load_map(get_base_map(128))
 
-# Spawn objects (type_id: 0=human, 1=bird, 2=house, etc.)
-game.spawn(object_id=1, type_id=0, x=64, z=64, y_offset=0.5)
+# Spawn objects
+game.spawn("House", 100, 100)
 
 # Register event callbacks
-@game.on_click
-def handle_click(x, y, z):
-    print(f"Ground clicked at: {x}, {y}, {z}")
+@game.set_callback
+def on_click(k, v):
+    if k == 2:
+        print(f"Clicked: {game.get_click_pos()}")
 
 # Start the game loop
 game.start()

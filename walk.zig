@@ -61,7 +61,7 @@ const Map = struct {
             .image = std.mem.zeroes(ray.Image),
             .texture = std.mem.zeroes(ray.Texture),
             .water_level = 5.0,
-            .noise_weight = 0.5,
+            .noise_weight = 0.9,
             .texture_scale = 1.0,
         };
 
@@ -69,9 +69,6 @@ const Map = struct {
         self.model = ray.LoadModelFromMesh(initial_mesh);
 
         if (seed == 0) {
-            // self.base_map = try terrain_gen.createBowlMap(allocator, size); //: v0
-            // self.base_map = try getDungeon(allocator, seed, size, 4); //: v1
-            // } else {
             self.base_map = null;
         }
 
@@ -250,6 +247,22 @@ export fn spawn_object(id: i32, type_id: i32, x: f32, z: f32, y_off: f32) void {
         const obj = Object{
             .id = id,
             .obj_type = @enumFromInt(type_id),
+            .x = x,
+            .z = z,
+            .y_offset = y_off,
+            .yaw = 0.0,
+        };
+        state.objects.put(id, obj) catch {};
+    }
+}
+
+export fn spawn_object_by_name(id: i32, type_name: [*c]const u8, x: f32, z: f32, y_off: f32) void {
+    if (lib_instance) |state| {
+        const name_slice = std.mem.span(type_name);
+        const obj_type = object_gen.ObjectType.fromString(name_slice);
+        const obj = Object{
+            .id = id,
+            .obj_type = obj_type,
             .x = x,
             .z = z,
             .y_offset = y_off,
@@ -742,6 +755,15 @@ export fn start_dialogue(npc_id: i32) void {
     }
 }
 
+export fn set_chat_portrait(path: [*c]const u8) void {
+    if (lib_instance) |state| {
+        if (state.chat) |*cm| {
+            const path_slice = std.mem.span(path);
+            cm.chat.loadPortrait(path_slice);
+        }
+    }
+}
+
 export fn update_chat_text(text: [*c]const u8) void {
     if (lib_instance) |state| {
         if (state.chat) |*cm| {
@@ -814,8 +836,6 @@ pub fn main() !void {
     ray.SetTargetFPS(60);
     const seed = if (build_config.init_seed >= 0)
         build_config.init_seed
-        // else if (build_config.dungeon_type >= 0)
-        //     0
     else
         getSeed();
     var state = try State.create(gpa.allocator(), build_config.map_size, seed);

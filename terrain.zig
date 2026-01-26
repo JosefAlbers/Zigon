@@ -301,25 +301,21 @@ pub fn getTerrainHeight(
 
 pub fn getBilinearHeight(terrain: []const f32, xz: @Vector(2, f32), size: usize) ?f32 {
     const f_size = @as(f32, @floatFromInt(size));
+    if (@reduce(.Or, xz < @as(@Vector(2, f32), @splat(0))) or
+        @reduce(.Or, xz >= @as(@Vector(2, f32), @splat(f_size)))) return null;
     const xz0 = @floor(xz);
-    const limit = @as(@Vector(2, f32), @splat(f_size - 1.0));
-    if (@reduce(.Or, xz0 < @as(@Vector(2, f32), @splat(0))) or
-        @reduce(.Or, xz0 >= limit)) return null;
     const t_xz = xz - xz0;
     const ix0 = @as(usize, @intFromFloat(xz0[0]));
     const iz0 = @as(usize, @intFromFloat(xz0[1]));
-    const row0 = iz0 * size;
-    const row1 = (iz0 + 1) * size;
-    const heights = @Vector(4, f32){
-        terrain[row0 + ix0],
-        terrain[row0 + ix0 + 1],
-        terrain[row1 + ix0],
-        terrain[row1 + ix0 + 1],
-    };
-    const left = @Vector(2, f32){ heights[0], heights[2] };
-    const right = @Vector(2, f32){ heights[1], heights[3] };
-    const pairs = left + @as(@Vector(2, f32), @splat(t_xz[0])) * (right - left);
-    return pairs[0] + t_xz[1] * (pairs[1] - pairs[0]);
+    const ix1 = @min(ix0 + 1, size - 1);
+    const iz1 = @min(iz0 + 1, size - 1);
+    const h00 = terrain[iz0 * size + ix0];
+    const h10 = terrain[iz0 * size + ix1];
+    const h01 = terrain[iz1 * size + ix0];
+    const h11 = terrain[iz1 * size + ix1];
+    const row0 = h00 + t_xz[0] * (h10 - h00);
+    const row1 = h01 + t_xz[0] * (h11 - h01);
+    return row0 + t_xz[1] * (row1 - row0);
 }
 
 fn rayTerrainIntersection(
@@ -385,8 +381,8 @@ fn getTerrainColor(height: f32, water_level: f32, cube_height: f32) Color {
     const v = (height - water_level) / cube_height;
     if (v < -0.4) return hsvToRgba(40.0, 0.5, 0.0);
     if (v < 0.05) return hsvToRgba(40.0, 0.5, 0.8 + v * 2.0);
-    if (v < 0.15) return hsvToRgba(95.0, 0.55 + v, 0.625 - v / 2.0);
-    if (v < 0.35) return hsvToRgba(110.0, 0.7, 0.5 - (v - 0.15) * 0.5);
+    if (v < 0.15) return hsvToRgba(95.0, 0.55 + v, 0.625 - v * 0.5);
+    if (v < 0.35) return hsvToRgba(110.0, 0.6 + (v - 0.15) * 2.0, 0.5 - (v - 0.15) * 0.7);
     if (v < 0.55) return hsvToRgba(30.0, 0.6 - (v - 0.35) * 1.5, 0.3 + (v - 0.35) * 1.5);
     if (v < 1.55) return hsvToRgba(210.0, 0.1, 1.55 - v);
     return hsvToRgba(210.0, 0.1, 0.0);
@@ -408,10 +404,7 @@ pub fn writeTextureBuffer(
         const fz = @as(f32, @floatFromInt(z)) * inv_scale;
         for (0..w) |x| {
             const fx = @as(f32, @floatFromInt(x)) * inv_scale;
-            const height = if (texture_scale > 1.0)
-                getWeightedAverageHeight(terrain, fx, fz, 1.0, base_size, 1.0)
-            else
-                getTerrainHeight(terrain, fx, fz, 1, base_size, base_size, .avg);
+            const height = getBilinearHeight(terrain, .{ fx, fz }, base_size);
             const h_val = height orelse 0.0;
             buffer[z * w + x] = getTerrainColor(h_val * cube_height, water_level, cube_height);
         }

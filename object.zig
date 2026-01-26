@@ -131,8 +131,8 @@ const tree_sequence = ShapeSequence{ .steps = &[_]ShapeStep{
 } };
 
 const house_sequence = ShapeSequence{ .steps = &[_]ShapeStep{
-    .{ .offset = .{ .x = 0, .y = 1, .z = 0 }, .config = .{ .shape = .Cube, .thickness = 1.5, .color = ray.BEIGE } },
-    .{ .offset = .{ .x = 0, .y = 2, .z = 0 }, .config = .{ .shape = .Cone, .radius = 1.5, .slices = 4, .color = ray.RED, .roll = 45 } },
+    .{ .offset = .{ .x = 0, .y = 1, .z = 0 }, .config = .{ .shape = .Cube, .thickness = 1.5, .color = ray.GRAY } },
+    .{ .offset = .{ .x = 0, .y = 2, .z = 0 }, .config = .{ .shape = .Cone, .radius = 1.5, .slices = 4, .color = ray.MAROON, .roll = 45 } },
 } };
 
 const bird_sequence = ShapeSequence{
@@ -235,7 +235,7 @@ pub const ObjectType = enum {
     Rain,
     Human,
     pub fn fromString(s: []const u8) ObjectType {
-        return std.meta.stringToEnum(ObjectType, s) orelse .Tool;
+        return std.meta.stringToEnum(ObjectType, s) orelse .Beam;
     }
 };
 
@@ -254,7 +254,7 @@ pub fn drawObject(obj_type: ObjectType, x: f32, y: f32, z: f32, yaw: f32, t: f32
         },
         .Rain => rain_sequence.draw(zero, @rem(t, 1.0) * @max(10, y)),
         .Bird => bird_sequence.draw(zero, @sin(t * 15.0)),
-        .House => tree_sequence.draw(zero, t),
+        .House => house_sequence.draw(zero, t),
         .Tree => tree_sequence.draw(zero, t),
         .Rock => rock_sequence.draw(zero, t),
         .Beam => {
