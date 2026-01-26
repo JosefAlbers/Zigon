@@ -17,14 +17,14 @@ class BuildZig(build):
 
 setup(
     name="zigger",
-    version="0.0.1a1",
+    version="0.0.1a2",
     author="J Joe",
     author_email="albersj66@gmail.com",
     long_description=open('README.md', encoding='utf-8').read(),
     long_description_content_type="text/markdown",
     url="https://github.com/JosefAlbers/TerrainZigger",
     description="Terrain Zigger",
-    py_modules=['main'], 
+    py_modules=['main'],
     install_requires=['ziglang==0.13.0.post1', 'numpy', 'requests'],
     cmdclass={'build': BuildZig},
     data_files=[
