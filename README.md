@@ -1,10 +1,10 @@
-# TerrainZigger: Procedural 3D World Builder
+# Zigon: Procedural 3D World Builder
 
-![TerrainZigger](https://raw.githubusercontent.com/JosefAlbers/TerrainZigger/main/assets/terrain_zigger.gif)
+![Zigon](https://raw.githubusercontent.com/JosefAlbers/Zigon/main/assets/zigon.gif)
 
 A lightweight, cross-platform 3D terrain generator and game engine built in Zig with Python scripting support. Create procedural worlds—from noise-based terrain to wave function collapse dungeons—and bring them to life with dynamic NPCs, pathfinding, and interactive dialogues. Powered by Raylib for high-performance 3D rendering.
 
-## Why TerrainZigger?
+## Why Zigon?
 
 - **Performance-First**: Zig's compile-time safety meets runtime speed for smooth real-time 3D
 - **Scriptable**: Python integration via ctypes for AI behaviors, events, and gameplay logic
@@ -33,14 +33,14 @@ A lightweight, cross-platform 3D terrain generator and game engine built in Zig 
 
 ```bash
 # Clone the repository
-git clone https://github.com/JosefAlbers/TerrainZigger.git
-cd TerrainZigger
+git clone https://github.com/JosefAlbers/Zigon.git
+cd Zigon
 
 # Build and run the main application
 zig build run
 
 # For Python scripting support
-pip install zigger
+pip install zigon
 ```
 
 ### Build Commands
@@ -115,7 +115,7 @@ zig build run -Ddungeon-type=2 -Dmap-size=256 -Dwindow-width=1920 -Dwindow-heigh
 zig build run -Ddungeon-type=5 -Ddungeon-magnify=8
 ```
 
-![zig build run -Ddungeon-type=4](https://raw.githubusercontent.com/JosefAlbers/TerrainZigger/main/assets/maze.png)
+![zig build run -Ddungeon-type=4](https://raw.githubusercontent.com/JosefAlbers/Zigon/main/assets/maze.png)
 
 ### Cross-Platform Setup
 
@@ -139,13 +139,13 @@ zig build run -Draylib-include=C:/msys64/mingw64/include -Draylib-lib=C:/msys64/
 
 ## Python Integration
 
-Use the `zigger` Python package to script behaviors, load real-world topography, and control the game:
+Use the `zigon` Python package to script behaviors, load real-world topography, and control the game:
 
 ```python
-from zigger import Zigger
+from zigon import Zigon
 
 # Initialize with custom terrain size
-game = Zigger(size=128)
+game = Zigon(size=128)
 
 # Load procedural or real topographic data
 game.load_map(get_base_map(128))
@@ -162,6 +162,8 @@ def on_click(k, v):
 # Start the game loop
 game.start()
 ```
+
+![Zigon](https://raw.githubusercontent.com/JosefAlbers/Zigon/main/assets/terrain_zigger.gif)
 
 ## Controls
 
@@ -180,7 +182,7 @@ game.start()
 ## Project Structure
 
 ```
-TerrainZigger/
+Zigon/
 ├── walk.zig          # Main application and game state
 ├── terrain.zig       # Procedural terrain generation
 ├── dungeon.zig       # Wave function collapse dungeon generator

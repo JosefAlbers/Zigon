@@ -50,7 +50,7 @@ def get_base_map(out_size, tile=None):
 # }}} INIT
 # {{{ ZIG
 
-class Zigger:
+class Zigon:
     def __init__(self, size=128, seed=142):
         system = platform.system()
         if system == "Darwin":
@@ -282,7 +282,7 @@ class Objects:
 # {{{ RUN
 
 def demo(terrain_size=128):
-    game = Zigger(size=terrain_size)
+    game = Zigon(size=terrain_size)
     # game.load_map(get_base_map(terrain_size, 'gradient')) #: mock
     game.load_map(get_base_map(terrain_size)) #: boston
 
