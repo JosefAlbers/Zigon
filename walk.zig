@@ -831,7 +831,7 @@ fn getDungeon(allocator: std.mem.Allocator, seed: u64, size: usize, magnify: usi
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    ray.InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Terrain Zigger");
+    ray.InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Zigon Terrain");
     defer ray.CloseWindow();
     ray.SetTargetFPS(60);
     const seed = if (build_config.init_seed >= 0)
@@ -944,7 +944,7 @@ var lib_instance: ?*State = null;
 export fn init_state(seed: u64, size: i32) void {
     if (lib_instance != null) return;
     if (!ray.IsWindowReady()) {
-        ray.InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Terrain Zigger");
+        ray.InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Zigon Terrain");
         ray.SetTargetFPS(60);
     }
     lib_instance = State.create(std.heap.c_allocator, @intCast(size), seed) catch |err| {

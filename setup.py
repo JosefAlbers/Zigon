@@ -16,14 +16,14 @@ class BuildZig(build):
         shutil.copytree(source_dir, lib_dir)
 
 setup(
-    name="zigger",
-    version="0.0.1a2",
+    name="zigon",
+    version="0.0.1a0",
     author="J Joe",
     author_email="albersj66@gmail.com",
     long_description=open('README.md', encoding='utf-8').read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/JosefAlbers/TerrainZigger",
-    description="Terrain Zigger",
+    url="https://github.com/JosefAlbers/Zigon",
+    description="Zigon: Procedural 3D World Builder (formerly Terrain Zigger)",
     py_modules=['main'],
     install_requires=['ziglang==0.13.0.post1', 'numpy', 'requests'],
     cmdclass={'build': BuildZig},
