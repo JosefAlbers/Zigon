@@ -2,25 +2,19 @@
 
 ![Zigon](https://raw.githubusercontent.com/JosefAlbers/Zigon/main/assets/zigon.gif)
 
-A lightweight, cross-platform 3D terrain generator and game engine built in Zig with Python scripting support. Create procedural worlds—from noise-based terrain to wave function collapse dungeons—and bring them to life with dynamic NPCs, pathfinding, and interactive dialogues. Powered by Raylib for high-performance 3D rendering.
+A procedural generation engine written in Zig and Raylib, with a Python scripting layer.
 
-## Why Zigon?
+I built this to experiment with different procedural algorithms in a native environment without sacrificing the flexibility of scripting. It currently generates noise-based terrain and Wave Function Collapse (WFC) dungeons, rendered in real-time.
 
-- **Performance-First**: Zig's compile-time safety meets runtime speed for smooth real-time 3D
-- **Scriptable**: Python integration via ctypes for AI behaviors, events, and gameplay logic
-- **Procedural Generation**: Perlin/FBM noise terrain, Poisson disk foliage distribution, and wave function collapse dungeons
-- **Interactive**: Built-in raycasting, pathfinding, unit selection, and dialogue system
-- **Cross-Platform**: Runs on macOS, Linux, and Windows with configurable build options
+## The Tech
 
-## Features
-
-- **Terrain Generation**: Procedural noise-based terrain with support for custom base maps and biomes
-- **Dungeon Generation**: Six dungeon archetypes (rooms, rogue, cavern, maze, labyrinth, arena) using wave function collapse
-- **Object System**: Spawn and animate humans, birds, particles, and 3D primitives
-- **Camera Modes**: Orbit camera for overview, first-person mode for exploration
-- **User Interactions**: Click-to-select units, drag selection boxes, ground targeting
-- **Python Hooks**: Event callbacks for clicks, chat submissions, and game ticks
-- **Web Export**: WASM-ready for browser-based demos
+* **Core:** ZigLang (Native compilation, build system)
+* **Renderer:** Raylib (via C ABI)
+* **Scripting:** Python (ctypes bindings for hot-reloading logic)
+* **Algorithms:**
+  * **Terrain:** FBM/Perlin noise with erosion simulation.
+  * **Dungeons:** Wave Function Collapse (WFC) with backtracking. Support for 6 archetypes (rogue, maze, arena, etc.).
+  * **Foliage:** Poisson Disk Sampling for distribution.
 
 ## Quick Start
 
@@ -179,17 +173,12 @@ game.start()
 - **F** / **C** - Increase/decrease texture scale
 - **D** / **N** - Lighter/darker sky
 
-## Project Structure
+## Project Layout
 
-```
-Zigon/
-├── walk.zig          # Main application and game state
-├── terrain.zig       # Procedural terrain generation
-├── dungeon.zig       # Wave function collapse dungeon generator
-├── object.zig        # 3D object rendering and animation
-├── chat.zig          # Dialogue system UI
-└── build.zig         # Build configuration
-```
+* `src/walk.zig`: Entry point and main loop.
+* `src/terrain.zig`: Noise functions and mesh generation.
+* `src/dungeon.zig`: WFC implementation and solver.
+* `src/bindings.zig`: C-ABI export for Python ctypes.
 
 ## Contributing
 
