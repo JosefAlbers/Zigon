@@ -1,213 +1,185 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Terrain WASM</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Walk - 3D Terrain Explorer</title>
     <style>
         body {
-            background: #333;
-            color: white;
-            text-align: center;
-            font-family: Arial, sans-serif;
-        }
-        #controls {
-            margin: 20px auto;
-            max-width: 600px;
-        }
-        .control-group {
-            margin: 15px 0;
+            margin: 0;
+            padding: 0;
+            background: #000;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 10px;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
         }
-        input[type="range"] {
-            width: 200px;
+        
+        #canvas-container {
+            position: relative;
+            margin: 20px;
+            box-shadow: 0 4px 20px rgba(0, 255, 255, 0.3);
         }
-        label {
-            min-width: 100px;
-            text-align: right;
-        }
-        .value-display {
-            min-width: 50px;
-            text-align: left;
-            font-weight: bold;
-        }
-        button {
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-            background: #4a4a4a;
-            color: white;
-            border: 1px solid white;
+        
+        canvas {
+            display: block;
+            border: 2px solid #0ff;
             border-radius: 4px;
         }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 30px;
+            border-radius: 10px;
+            border: 2px solid #0ff;
+        }
+        
+        #loading.hidden {
+            display: none;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(0, 255, 255, 0.3);
+            border-top: 4px solid #0ff;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        #controls {
+            background: rgba(0, 20, 40, 0.9);
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 800px;
+            margin: 0 20px 20px;
+            border: 1px solid #0ff;
+        }
+        
+        .control-group {
+            margin: 10px 0;
+        }
+        
+        .control-group h3 {
+            margin: 0 0 10px;
+            color: #0ff;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+        
+        .control-group p {
+            margin: 5px 0;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        
+        kbd {
+            background: #333;
+            padding: 2px 6px;
+            border-radius: 3px;
+            border: 1px solid #555;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        h1 {
+            margin: 20px 0 10px;
+            font-size: 28px;
+            text-shadow: 0 0 10px #0ff;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background: #0ff;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        
         button:hover {
-            background: #5a5a5a;
+            background: #0cc;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 255, 255, 0.3);
+        }
+        
+        button:active {
+            transform: translateY(0);
         }
     </style>
 </head>
 <body>
-    <h1>Zigon Terrain WASM</h1>
+    <h1>🗻 ZigOn - 3D Terrain Explorer</h1>
+    
+    <div id="canvas-container">
+        <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+        <div id="loading">
+            <div class="spinner"></div>
+            <div>Loading terrain...</div>
+        </div>
+    </div>
     
     <div id="controls">
         <div class="control-group">
-            <label for="waterLevel">Water Level:</label>
-            <input type="range" id="waterLevel" min="0" max="1" step="0.01" value="0.2">
-            <span class="value-display" id="waterLevelValue">0.20</span>
+            <h3>🖱️ Mouse Controls</h3>
+            <p><kbd>Left Drag</kbd> - Orbit Camera</p>
+            <p><kbd>Right Click</kbd> - Regenerate Terrain (New Seed)</p>
+            <p><kbd>Middle Click</kbd> - Spawn/Despawn (Toggle First Person)</p>
+            <p><kbd>Wheel</kbd> - Zoom In/Out</p>
         </div>
         <div class="control-group">
-            <label for="sandLevel">Sand Level:</label>
-            <input type="range" id="sandLevel" min="0" max="1" step="0.01" value="0.3">
-            <span class="value-display" id="sandLevelValue">0.30</span>
-        </div>
-        <div class="control-group">
-            <button onclick="render()">Regenerate Terrain</button>
+            <h3>⌨️ Keyboard Shortcuts</h3>
+            <p><kbd>Z</kbd> - Reset Camera View</p>
+            <p><kbd>,</kbd> / <kbd>.</kbd> - Lower/Raise Water Level</p>
+            <p><kbd>[</kbd> / <kbd>]</kbd> - Decrease/Increase Roughness</p>
+            <p><kbd>F</kbd> / <kbd>C</kbd> - Increase/Decrease Texture Scale</p>
         </div>
     </div>
 
-    <canvas id="canvas" width="512" height="512" style="border: 1px solid white; image-rendering: pixelated;"></canvas>
-
     <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const size = 128;
-        const textureScale = 4;
-
-        let wasmExports = null;
-        let waterLevel = 0.2;
-        let sandLevel = 0.3;
-
-        const waterSlider = document.getElementById('waterLevel');
-        const sandSlider = document.getElementById('sandLevel');
-        const waterDisplay = document.getElementById('waterLevelValue');
-        const sandDisplay = document.getElementById('sandLevelValue');
-        const TREE_MAX_HEIGHT = 0.8;
-
-        waterSlider.addEventListener('input', (e) => {
-            waterLevel = parseFloat(e.target.value);
-            waterDisplay.textContent = waterLevel.toFixed(2);
-            
-            if (sandLevel <= waterLevel) {
-                sandLevel = waterLevel + 0.05;
-                sandSlider.value = sandLevel;
-                sandDisplay.textContent = sandLevel.toFixed(2);
-            }
-            
-            render();
-        });
-
-        sandSlider.addEventListener('input', (e) => {
-            sandLevel = parseFloat(e.target.value);
-            sandDisplay.textContent = sandLevel.toFixed(2);
-            
-            if (sandLevel <= waterLevel) {
-                waterLevel = sandLevel - 0.05;
-                waterSlider.value = waterLevel;
-                waterDisplay.textContent = waterLevel.toFixed(2);
-            }
-            
-            render();
-        });
-
-        fetch('zig-out/bin/terrain.wasm')
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.arrayBuffer();
-            })
-            .then(bytes => WebAssembly.instantiate(bytes, { env: {} }))
-            .then(result => {
-                wasmExports = result.instance.exports;
-                console.log('WASM loaded successfully!');
-                console.log('Exports:', Object.keys(wasmExports));
-                render();
-            })
-            .catch(err => {
-                console.error('Failed to load WASM:', err);
-                document.body.innerHTML += `<p style="color: red;">Error: ${err.message}</p>`;
-            });
-
-        function render() {
-            if (!wasmExports) return;
-            
-            const seed = Math.floor(Math.random() * 100000);
-            wasmExports.generate_terrain_wasm(seed, size);
-            
-            for (let y = 0; y < size; y++) {
-                for (let x = 0; x < size; x++) {
-                    const height = wasmExports.get_terrain_height_wasm(x, y, size);
-                    
-                    let r, g, b;
-                    if (height < waterLevel) { 
-                        const depth = 1 - (height / waterLevel);
-                        b = Math.floor(150 + depth * 105);
-                        r = 0; 
-                        g = 0;
-                    }
-                    else if (height < sandLevel) { 
-                        r = 200; 
-                        g = 200; 
-                        b = 100; 
-                    }
-                    else { 
-                        r = 0; 
-                        g = Math.floor(100 + (height * 155)); 
-                        b = 0; 
-                    }
-
-                    ctx.fillStyle = `rgb(${r},${g},${b})`;
-                    ctx.fillRect(x * textureScale, y * textureScale, textureScale, textureScale);
-                }
-            }
-            
-            wasmExports.generate_foliage_wasm(seed, size);
-            drawTrees();
-        }
-        
-        function drawTrees() {
-            const count = wasmExports.get_foliage_len();
-            if (count === 0) return;
-
-            const ptr = wasmExports.get_foliage_ptr();
-            
-            if (!wasmExports.memory || !wasmExports.memory.buffer) {
-                console.error('WASM memory not accessible');
-                return;
-            }
-            
-            const memory = new Float32Array(wasmExports.memory.buffer);
-            const dataStart = ptr / 4;
-            
-            if (dataStart + count * 2 > memory.length) {
-                console.error('Tree data exceeds memory bounds');
-                return;
-            }
-            
-            const trees = memory.subarray(dataStart, dataStart + count * 2);
-            ctx.fillStyle = '#1a4d1a';
-
-            for (let i = 0; i < count; i++) {
-                const tx = trees[i * 2];
-                const ty = trees[i * 2 + 1];
-
-                const treeX = Math.floor(tx);
-                const treeY = Math.floor(ty);
+        var Module = {
+            canvas: (function() {
+                return document.getElementById('canvas');
+            })(),
+            onRuntimeInitialized: function() {
+                console.log('WASM Runtime initialized');
+                var loadingDiv = document.getElementById('loading');
+                if(loadingDiv) loadingDiv.classList.add('hidden');
                 
-                if (treeX >= 0 && treeX < size && treeY >= 0 && treeY < size) {
-                    const terrainHeight = wasmExports.get_terrain_height_wasm(treeX, treeY, size);
-                    
-                    if (terrainHeight >= sandLevel+0.1 && terrainHeight <= TREE_MAX_HEIGHT) {
-                        ctx.fillRect(
-                            (tx * textureScale) - 2, 
-                            (ty * textureScale) - 2, 
-                            4, 
-                            4
-                        );
-                    }
+                if (Module._gogo) {
+                    Module._gogo();
                 }
-            }
-        }
+            },
+            print: function(text) { console.log('[stdout]', text); },
+            printErr: function(text) { console.error('[stderr]', text); }
+        };
+
     </script>
+    
+    <script async type="text/javascript" src="index.js"></script>
 </body>
 </html>
