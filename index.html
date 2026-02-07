@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Walk - 3D Terrain Explorer</title>
+    <title>JosefAlbers/ZigOn - 3D Terrain Explorer</title>
     <style>
         body {
             margin: 0;
@@ -102,6 +102,34 @@
             font-size: 28px;
             text-shadow: 0 0 10px #0ff;
         }
+
+        /* NEW LINKS SECTION STYLE */
+        .links {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .link-btn {
+            color: #0ff;
+            text-decoration: none;
+            border: 1px solid #0ff;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 255, 255, 0.1);
+        }
+
+        .link-btn:hover {
+            background: #0ff;
+            color: #000;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
         
         .button-group {
             display: flex;
@@ -133,7 +161,16 @@
     </style>
 </head>
 <body>
-    <h1>🗻 ZigOn - 3D Terrain Explorer</h1>
+    <h1>JJoe/ZigOn - 3D Terrain Explorer</h1>
+
+    <div class="links">
+        <a href="https://github.com/JosefAlbers/Zigon" target="_blank" class="link-btn">
+            💻 Source Code (GitHub)
+        </a>
+        <a href="https://youtu.be/kJUUgr20fXE" target="_blank" class="link-btn">
+            📺 Watch Video (YouTube)
+        </a>
+    </div>
     
     <div id="canvas-container">
         <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
@@ -148,7 +185,7 @@
             <h3>🖱️ Mouse Controls</h3>
             <p><kbd>Left Drag</kbd> - Orbit Camera</p>
             <p><kbd>Right Click</kbd> - Regenerate Terrain (New Seed)</p>
-            <p><kbd>Middle Click</kbd> - Spawn/Despawn (Toggle First Person)</p>
+            <p><kbd>Middle Click</kbd> - Toggle Camera Mode (First/Third Person)</p>
             <p><kbd>Wheel</kbd> - Zoom In/Out</p>
         </div>
         <div class="control-group">
@@ -177,7 +214,6 @@
             print: function(text) { console.log('[stdout]', text); },
             printErr: function(text) { console.error('[stderr]', text); }
         };
-
     </script>
     
     <script async type="text/javascript" src="index.js"></script>
