@@ -23,17 +23,459 @@ const dungeon_gen = @import("dungeon.zig");
 const build_config = @import("config");
 const WINDOW_WIDTH: i32 = build_config.window_width;
 const WINDOW_HEIGHT: i32 = build_config.window_height;
-// const WINDOW_WIDTH: i32 = 1920;
-// const WINDOW_HEIGHT: i32 = 1000;
-const CUBE_BASE: f32 = 1.0;
-const CUBE_HEIGHT: f32 = 20.0 * CUBE_BASE;
+
+var CUBE_BASE: f32 = 1.0;
+var CUBE_HEIGHT: f32 = 20.0;
+
+export fn set_phys_cfg(base: f32, height: f32) void {
+    CUBE_BASE = base;
+    CUBE_HEIGHT = height;
+    if (lib_instance) |state| {
+        state.map.rendered_size = @as(f32, @floatFromInt(state.map.size - 1)) * CUBE_BASE;
+    }
+}
 
 fn getSeed() u64 {
     return @as(u64, @intCast(std.time.timestamp()));
 }
 
 //}}} INIT
+//{{{ USR
+
+const User = struct {
+    camera: ray.Camera3D,
+    mode: enum { fpv, tpv, non },
+    init_pos: ray.Vector3,
+    init_tgt: ray.Vector3,
+    height: f32,
+
+    fn init(size: usize) User {
+        ray.EnableCursor();
+        const physical_size = @as(f32, @floatFromInt(size - 1)) * CUBE_BASE;
+        const dist = physical_size * 0.8;
+        const init_pos = ray.Vector3{ .x = dist, .y = dist, .z = dist };
+        const init_tgt = ray.Vector3{ .x = 0.0, .y = -dist * 0.2, .z = 0.0 };
+        return .{
+            .camera = ray.Camera3D{
+                .position = init_pos,
+                .target = init_tgt,
+                .up = .{ .x = 0.0, .y = 1.0, .z = 0.0 },
+                .fovy = 45.0,
+                .projection = ray.CAMERA_PERSPECTIVE,
+            },
+            .mode = .tpv,
+            .init_pos = init_pos,
+            .init_tgt = init_tgt,
+            .height = 0.7,
+        };
+    }
+
+    fn update(self: *User, map: *Map) void {
+        switch (self.mode) {
+            .fpv => {
+                const old_pos = self.camera.position;
+                ray.UpdateCamera(&self.camera, ray.CAMERA_FIRST_PERSON);
+                if (map.getY(.{ self.camera.position.x, self.camera.position.z })) |h| {
+                    self.camera.position.y = h + self.height;
+                } else {
+                    self.camera.position = old_pos;
+                }
+            },
+            .tpv => {
+                const wheel = ray.GetMouseWheelMove();
+                if (wheel != 0) self.zoom(wheel);
+                // self.orbit();
+            },
+            else => return,
+        }
+    }
+
+    fn spawn(self: *User, pos: ray.Vector3) void {
+        self.camera.position = .{ .x = pos.x, .y = pos.y + self.height, .z = pos.z };
+        self.camera.target = .{ .x = 0.0, .y = pos.y + self.height, .z = 0.0 };
+        ray.DisableCursor();
+        self.mode = .fpv;
+    }
+
+    fn orbit(self: *User) void {
+        const sens = 0.003;
+        const delta = ray.GetMouseDelta();
+        const r = std.math.sqrt(self.camera.position.x * self.camera.position.x + self.camera.position.y * self.camera.position.y + self.camera.position.z * self.camera.position.z);
+        var ax = std.math.asin(self.camera.position.y / r);
+        var ay = std.math.atan2(self.camera.position.z, self.camera.position.x);
+        ax = std.math.clamp(ax + delta.y * sens, -std.math.pi / 3.0, std.math.pi / 3.0);
+        ay -= delta.x * sens;
+        self.camera.position.x = @cos(ay) * @cos(ax) * r;
+        self.camera.position.y = @sin(ax) * r;
+        self.camera.position.z = @sin(ay) * @cos(ax) * r;
+        self.camera.target = self.init_tgt;
+    }
+
+    fn zoom(self: *User, amount: f32) void {
+        const f = 1.0 - amount * 0.05;
+        self.camera.position.x *= f;
+        self.camera.position.y *= f;
+        self.camera.position.z *= f;
+    }
+
+    fn reset(self: *User) void {
+        self.camera.position = self.init_pos;
+        self.camera.target = self.init_tgt;
+        self.camera.projection = ray.CAMERA_PERSPECTIVE;
+        ray.EnableCursor();
+        self.mode = .tpv;
+    }
+};
+
+export fn get_user_status(x: *f32, y: *f32, z: *f32) bool {
+    if (lib_instance) |state| {
+        if (state.user.mode == .fpv) {
+            x.* = state.user.camera.position.x;
+            y.* = state.user.camera.position.y;
+            z.* = state.user.camera.position.z;
+            return true;
+        }
+    }
+    return false;
+}
+
+export fn get_camera_transform(px: *f32, py: *f32, pz: *f32, tx: *f32, ty: *f32, tz: *f32, ux: *f32, uy: *f32, uz: *f32, mode: *i32) void {
+    if (lib_instance) |state| {
+        px.* = state.user.camera.position.x;
+        py.* = state.user.camera.position.y;
+        pz.* = state.user.camera.position.z;
+        tx.* = state.user.camera.target.x;
+        ty.* = state.user.camera.target.y;
+        tz.* = state.user.camera.target.z;
+        ux.* = state.user.camera.up.x;
+        uy.* = state.user.camera.up.y;
+        uz.* = state.user.camera.up.z;
+        mode.* = @intFromEnum(state.user.mode);
+    }
+}
+
+export fn set_camera_transform(px: f32, py: f32, pz: f32, tx: f32, ty: f32, tz: f32, ux: f32, uy: f32, uz: f32, mode: i32) void {
+    if (lib_instance) |state| {
+        state.user.camera.position = .{ .x = px, .y = py, .z = pz };
+        state.user.camera.target = .{ .x = tx, .y = ty, .z = tz };
+        state.user.camera.up = .{ .x = ux, .y = uy, .z = uz };
+        state.user.mode = @enumFromInt(mode);
+    }
+}
+
+//}}} USR
+//{{{ OBJ
+
+const Object = struct {
+    id: i32,
+    obj_type: union(object_gen.ObjectType) {
+        Beam,
+        Rock,
+        Tree,
+        House,
+        Bird,
+        Rain,
+        Human,
+        Custom: object_gen.Kwargs,
+        Model: ModelData,
+    },
+    x: f32,
+    z: f32,
+    y_offset: f32,
+    rotation: ray.Vector3 = .{ .x = 0, .y = 0, .z = 0 },
+    target_x: ?f32 = null,
+    target_z: ?f32 = null,
+    speed: f32 = 5.0,
+    state: f32 = 0.0,
+    is_terrain_bound: bool = true,
+
+    const ModelData = struct {
+        model: *ray.Model,
+        scale: f32,
+        tint: ray.Color,
+    };
+
+    pub fn draw(self: *const Object, map: *Map, t: f32) void {
+        const world_y = if (self.is_terrain_bound)
+            (map.getY(.{ self.x, self.z }) orelse return) + self.y_offset
+        else
+            self.y_offset;
+        const world_pos = ray.Vector3{ .x = self.x, .y = world_y, .z = self.z };
+        const custom_args = switch (self.obj_type) {
+            .Custom => |args| args,
+            else => null,
+        };
+        const model_params = switch (self.obj_type) {
+            .Model => |data| object_gen.ObjectType.ModelParams{
+                .model = data.model.*,
+                .scale = data.scale,
+                .tint = data.tint,
+            },
+            else => null,
+        };
+        object_gen.drawObject(self.obj_type, world_pos, self.rotation, t * self.state, custom_args, model_params);
+    }
+
+    pub fn deinit(self: *Object) void {
+        _ = self;
+    }
+
+    pub fn update(self: *Object, dt: f32, others: *std.AutoHashMap(i32, Object)) void {
+        if (self.target_x) |tx| {
+            const tz = self.target_z.?;
+            const dx = tx - self.x;
+            const dz = tz - self.z;
+            const dist_sq = dx * dx + dz * dz;
+            if (dist_sq < 0.01) {
+                self.target_x = null;
+                self.target_z = null;
+                return;
+            }
+            const dist = @sqrt(dist_sq);
+            const move_amount = self.speed * dt;
+            self.x += (dx / dist) * move_amount;
+            self.z += (dz / dist) * move_amount;
+            self.rotation.y = std.math.atan2(dx, dz) * (180.0 / std.math.pi);
+        }
+        var it = others.valueIterator();
+        while (it.next()) |other| {
+            if (other.id == self.id) continue;
+            const dx = self.x - other.x;
+            const dz = self.z - other.z;
+            const dist_sq = dx * dx + dz * dz;
+            if (dist_sq < 1.0) {
+                const dist = @sqrt(dist_sq);
+                if (dist > 0.0001) {
+                    const push = (1.0 - dist) * 5.0 * dt;
+                    self.x += (dx / dist) * push;
+                    self.z += (dz / dist) * push;
+                }
+            }
+        }
+    }
+};
+
+fn getOrLoadModel(state: *State, path_slice: []const u8, rot: ray.Vector3, trans: ray.Vector3) !*ray.Model {
+    if (state.model_cache.getPtr(path_slice)) |model_ptr| {
+        return model_ptr;
+    }
+    const key = try state.allocator.dupe(u8, path_slice);
+    errdefer state.allocator.free(key);
+    const c_path = try state.allocator.allocSentinel(u8, path_slice.len, 0);
+    defer state.allocator.free(c_path);
+    @memcpy(c_path, path_slice);
+    var model = ray.LoadModel(c_path);
+    if (model.meshCount == 0) {
+        return error.ModelLoadFailed;
+    }
+    const mat_rot = ray.MatrixRotateXYZ(rot);
+    const mat_trans = ray.MatrixTranslate(trans.x, trans.y, trans.z);
+    const mat_fix = ray.MatrixMultiply(mat_rot, mat_trans);
+    model.transform = ray.MatrixMultiply(model.transform, mat_fix);
+    try state.model_cache.put(key, model);
+    return state.model_cache.getPtr(key).?;
+}
+
+export fn spawn_object_by_name(id: i32, type_name: [*c]const u8, x: f32, z: f32, y_off: f32) void {
+    if (lib_instance) |state| {
+        const name_slice = std.mem.span(type_name);
+        const tag = std.meta.stringToEnum(object_gen.ObjectType, name_slice) orelse .Rock;
+        const obj = Object{
+            .id = id,
+            .obj_type = switch (tag) {
+                .Custom => .{ .Custom = .{ .shape = .Cube } },
+                .Model => .{ .Model = .{ .model = undefined, .scale = 1.0, .tint = ray.WHITE } },
+                inline else => |t| @unionInit(@TypeOf(@as(Object, undefined).obj_type), @tagName(t), {}),
+            },
+            .x = x,
+            .z = z,
+            .y_offset = y_off,
+        };
+        state.objects.put(id, obj) catch {};
+    }
+}
+
+export fn set_object_rotation(id: i32, pitch: f32, yaw: f32, roll: f32) void {
+    if (lib_instance) |state| {
+        if (state.objects.getPtr(id)) |obj| {
+            obj.rotation = .{ .x = pitch, .y = yaw, .z = roll };
+        }
+    }
+}
+
+export fn spawn_custom_mesh(id: i32, shape_idx: i32, x: f32, y_offset: f32, z: f32, radius: f32, width: f32, height: f32, r: i32, g: i32, b: i32) void {
+    if (lib_instance) |state| {
+        const obj = Object{
+            .id = id,
+            .obj_type = .{
+                .Custom = .{
+                    .shape = @enumFromInt(shape_idx),
+                    .radius = radius,
+                    .width = width,
+                    .height = height,
+                    .color = .{ .r = @intCast(r), .g = @intCast(g), .b = @intCast(b), .a = 255 },
+                },
+            },
+            .x = x,
+            .z = z,
+            .y_offset = y_offset,
+        };
+        state.objects.put(id, obj) catch {};
+    }
+}
+
+export fn spawn_object(id: i32, type_id: i32, x: f32, z: f32, y_off: f32) void {
+    if (lib_instance) |state| {
+        const tag: object_gen.ObjectType = @enumFromInt(type_id);
+        const obj = Object{
+            .id = id,
+            .obj_type = switch (tag) {
+                .Custom => .{ .Custom = .{} },
+                .Model => .{ .Model = .{ .model = undefined, .scale = 1.0, .tint = ray.WHITE } },
+                .Human => .Human,
+                .Rain => .Rain,
+                .Bird => .Bird,
+                .House => .House,
+                .Tree => .Tree,
+                .Rock => .Rock,
+                .Beam => .Beam,
+            },
+            .x = x,
+            .z = z,
+            .y_offset = y_off,
+        };
+        state.objects.put(id, obj) catch {};
+    }
+}
+
+export fn spawn_glb_model(
+    id: i32,
+    path_ptr: [*:0]const u8,
+    x: f32,
+    z: f32,
+    y_off: f32,
+    scale: f32,
+    rot_x: f32,
+    rot_y: f32,
+    rot_z: f32,
+    off_x: f32,
+    off_y: f32,
+    off_z: f32,
+    r: u8,
+    g: u8,
+    b: u8,
+) void {
+    if (lib_instance) |state| {
+        const path = std.mem.span(path_ptr);
+
+        const model_ptr = getOrLoadModel(state, path, .{ .x = rot_x, .y = rot_y, .z = rot_z }, .{ .x = off_x, .y = off_y, .z = off_z }) catch |err| {
+            std.debug.print("Failed to load model {s}: {}\n", .{ path, err });
+            return;
+        };
+
+        const obj = Object{
+            .id = id,
+            .obj_type = .{
+                .Model = .{
+                    .model = model_ptr,
+                    .scale = scale,
+                    .tint = ray.Color{ .r = r, .g = g, .b = b, .a = 255 },
+                },
+            },
+            .x = x,
+            .z = z,
+            .y_offset = y_off,
+        };
+        state.objects.put(id, obj) catch {};
+    }
+}
+
+export fn update_object_model(id: i32, path_ptr: [*:0]const u8) void {
+    if (lib_instance) |state| {
+        if (state.objects.getPtr(id)) |obj| {
+            switch (obj.obj_type) {
+                .Model => |*data| {
+                    const path = std.mem.span(path_ptr);
+                    if (getOrLoadModel(state, path, .{ .x = 0, .y = 0, .z = 0 }, .{ .x = 0, .y = 0, .z = 0 })) |new_ptr| {
+                        data.model = new_ptr;
+                    } else |_| {}
+                },
+                else => {},
+            }
+        }
+    }
+}
+
+export fn despawn_object(id: i32) void {
+    if (lib_instance) |state| {
+        if (state.objects.fetchRemove(id)) |kv| {
+            var obj = kv.value;
+            obj.deinit();
+        }
+    }
+}
+
+export fn get_object_position(id: i32, x: *f32, z: *f32, y_off: *f32) bool {
+    if (lib_instance) |state| {
+        if (state.objects.get(id)) |obj| {
+            x.* = obj.x;
+            z.* = obj.z;
+            y_off.* = obj.y_offset;
+            return true;
+        }
+    }
+    return false;
+}
+
+export fn set_object_terrain_bound(id: i32, bound: bool) void {
+    if (lib_instance) |state| {
+        if (state.objects.getPtr(id)) |obj| {
+            obj.is_terrain_bound = bound;
+        }
+    }
+}
+
+export fn set_object_position(id: i32, x: f32, z: f32, y_off: f32) void {
+    if (lib_instance) |state| {
+        if (state.objects.getPtr(id)) |obj| {
+            obj.x = x;
+            obj.z = z;
+            obj.y_offset = y_off;
+        }
+    }
+}
+
+export fn set_object_state(id: i32, state_val: f32) void {
+    if (lib_instance) |state| {
+        if (state.objects.getPtr(id)) |obj| {
+            obj.state = state_val;
+        }
+    }
+}
+
+export fn set_object_target(id: i32, target_x: f32, target_z: f32, speed: f32) void {
+    if (lib_instance) |state| {
+        if (state.objects.getPtr(id)) |obj| {
+            obj.target_x = target_x;
+            obj.target_z = target_z;
+            obj.speed = speed;
+        }
+    }
+}
+
+export fn stop_object(id: i32) void {
+    if (lib_instance) |state| {
+        if (state.objects.getPtr(id)) |obj| {
+            obj.target_x = null;
+            obj.target_z = null;
+        }
+    }
+}
+
+//}}} OBJ
 //{{{ MAP
+
+const city_gen = @import("city.zig");
 
 const Map = struct {
     allocator: std.mem.Allocator,
@@ -48,6 +490,13 @@ const Map = struct {
     water_level: f32,
     noise_weight: f32,
     texture_scale: f32,
+    octaves: u8 = 6,
+    persistence: f32 = 0.5,
+    lacunarity: f32 = 2.0,
+    fbm_scale: f32 = 50.0,
+    world_offset_x: f32 = 0.0,
+    world_offset_z: f32 = 0.0,
+    city: ?city_gen.CityConfig = null,
 
     pub fn init(allocator: std.mem.Allocator, size: usize, seed: u64) !Map {
         var self = Map{
@@ -60,18 +509,16 @@ const Map = struct {
             .model = std.mem.zeroes(ray.Model),
             .image = std.mem.zeroes(ray.Image),
             .texture = std.mem.zeroes(ray.Texture),
-            .water_level = 5.0,
+            .water_level = -2.0,
             .noise_weight = 0.9,
             .texture_scale = 1.0,
         };
-
         const initial_mesh = ray.GenMeshPlane(self.rendered_size, self.rendered_size, @intCast(size - 1), @intCast(size - 1));
         self.model = ray.LoadModelFromMesh(initial_mesh);
-
         if (seed == 0) {
             self.base_map = null;
+            // self.base_map = try getDungeon(allocator, 142, size, 4, @enumFromInt(1)); //[] ad hoc
         }
-
         try self.spawn(seed);
         return self;
     }
@@ -101,20 +548,34 @@ const Map = struct {
     }
 
     pub fn spawn(self: *Map, seed: u64) !void {
-        const config = terrain_gen.TerrainConfig{ .seed = seed, .size = self.size, .base_map = self.base_map, .noise_weight = self.noise_weight };
-
+        const half_size = self.rendered_size * 0.5;
+        const config = terrain_gen.TerrainConfig{
+            .seed = seed,
+            .size = self.size,
+            .base_map = self.base_map,
+            .noise_weight = self.noise_weight,
+            .octaves = self.octaves,
+            .persistence = self.persistence,
+            .lacunarity = self.lacunarity,
+            .scale = self.fbm_scale,
+            .world_start_x = self.world_offset_x - half_size,
+            .world_start_z = self.world_offset_z - half_size,
+            .world_step = CUBE_BASE,
+        };
         const new_terrain = try terrain_gen.generateTerrain(self.allocator, config);
         self.allocator.free(self.terrain);
         self.terrain = new_terrain;
-
         var mesh = self.model.meshes[0];
         for (0..self.size) |z| {
             for (0..self.size) |x| {
                 const idx = z * self.size + x;
+                const fx = @as(f32, @floatFromInt(x)) * CUBE_BASE;
+                const fz = @as(f32, @floatFromInt(z)) * CUBE_BASE;
+                mesh.vertices[idx * 3] = fx - half_size;
                 mesh.vertices[idx * 3 + 1] = self.terrain[idx] * CUBE_HEIGHT;
+                mesh.vertices[idx * 3 + 2] = fz - half_size;
             }
         }
-
         const v_count: i32 = @intCast(mesh.vertexCount);
         ray.UpdateMeshBuffer(mesh, 0, mesh.vertices, v_count * 3 * @sizeOf(f32), 0);
         self.update();
@@ -122,18 +583,15 @@ const Map = struct {
     }
 
     pub fn update(self: *Map) void {
-        const new_w: i32 = @intFromFloat(@as(f32, @floatFromInt(self.size)) * self.texture_scale);
+        const new_w: i32 = @intFromFloat(@as(f32, @floatFromInt(self.size - 1)) * self.texture_scale);
         const resized = (self.image.width != new_w) or (self.image.data == null);
-
         if (resized) {
             const new_image = ray.GenImageColor(new_w, new_w, ray.BLANK);
             const pixels: []terrain_gen.Color = @as([*]terrain_gen.Color, @ptrCast(@alignCast(new_image.data)))[0..@intCast(new_w * new_w)];
             terrain_gen.writeTextureBuffer(pixels, self.terrain, self.size, self.texture_scale, self.water_level, CUBE_HEIGHT);
             const new_texture = ray.LoadTextureFromImage(new_image);
             ray.SetTextureFilter(new_texture, ray.TEXTURE_FILTER_POINT);
-            if (self.model.materialCount > 0) {
-                self.model.materials[0].maps[ray.MATERIAL_MAP_DIFFUSE].texture = new_texture;
-            }
+            if (self.model.materialCount > 0) self.model.materials[0].maps[ray.MATERIAL_MAP_DIFFUSE].texture = new_texture;
             if (self.image.data != null) ray.UnloadImage(self.image);
             if (self.texture.id > 0) ray.UnloadTexture(self.texture);
             self.image = new_image;
@@ -145,32 +603,22 @@ const Map = struct {
         }
     }
 
-    pub fn draw(self: *Map) void {
-        ray.DrawModel(self.model, .{ .x = 0, .y = 0, .z = 0 }, 1.0, ray.WHITE);
-        ray.DrawCube(.{ .x = 0, .y = self.water_level, .z = 0 }, self.rendered_size, 0.1, self.rendered_size, ray.ColorAlpha(ray.SKYBLUE, 0.5));
+    pub fn draw(self: *Map, cam_x: f32, cam_z: f32) void {
+        ray.DrawModel(self.model, .{ .x = self.world_offset_x, .y = 0, .z = self.world_offset_z }, 1.0, ray.WHITE);
+        ray.DrawCube(.{ .x = self.world_offset_x, .y = self.water_level, .z = self.world_offset_z }, self.rendered_size, 0.1, self.rendered_size, ray.ColorAlpha(ray.SKYBLUE, 0.5));
+        if (self.city) |cfg| {
+            city_gen.drawCity(self.terrain, self.size, self.rendered_size, self.world_offset_x, self.world_offset_z, CUBE_BASE, CUBE_HEIGHT, self.water_level, cam_x, cam_z, cfg);
+        }
     }
 
-    fn getXZ(self: *Map, xz: @Vector(2, f32)) ?@Vector(2, f32) {
-        const g_xz = (xz + @as(@Vector(2, f32), @splat(self.rendered_size * 0.5))) / @as(@Vector(2, f32), @splat(CUBE_BASE));
-        if (@reduce(.Or, g_xz < @as(@Vector(2, f32), @splat(0))) or @reduce(.Or, g_xz >= @as(@Vector(2, f32), @splat(@floatFromInt(self.size))))) return null;
-        return g_xz;
-    }
-
-    fn getY(self: *Map, xz: @Vector(2, f32), needs_translation: bool) ?f32 {
-        const g_xz = if (needs_translation)
-            self.getXZ(xz) orelse return null
-        else
-            xz;
-        // const raw_h = terrain_gen.getWeightedAverageHeight(self.terrain, g_xz[0], g_xz[1], 1, self.size, 8.0) orelse return null; //: v1
-        const raw_h = terrain_gen.getBilinearHeight(self.terrain, g_xz, self.size) orelse return null; //: v2
+    fn getY(self: *Map, world_xz: @Vector(2, f32)) ?f32 {
+        const half_size = self.rendered_size * 0.5;
+        const local_x = world_xz[0] - self.world_offset_x;
+        const local_z = world_xz[1] - self.world_offset_z;
+        const local_v = @Vector(2, f32){ local_x, local_z };
+        const g_xz = (local_v + @as(@Vector(2, f32), @splat(half_size))) / @as(@Vector(2, f32), @splat(CUBE_BASE));
+        const raw_h = terrain_gen.getBilinearHeight(self.terrain, g_xz, self.size) orelse return null;
         return raw_h * CUBE_HEIGHT;
-    }
-
-    fn getXYZ(self: *Map, xz: @Vector(2, f32)) ?@Vector(3, f32) {
-        if (@reduce(.Or, xz < @as(@Vector(2, f32), @splat(0))) or @reduce(.Or, xz >= @as(@Vector(2, f32), @splat(@floatFromInt(self.size))))) return null;
-        const w_xz = (xz * @as(@Vector(2, f32), @splat(CUBE_BASE))) - @as(@Vector(2, f32), @splat(self.rendered_size * 0.5));
-        const w_y = self.getY(xz, false) orelse return null;
-        return .{ w_xz[0], w_y, w_xz[1] };
     }
 };
 
@@ -185,154 +633,268 @@ export fn load_map_data(data: [*]const f32, len: usize) void {
     }
 }
 
+export fn get_terrain_height(world_x: f32, world_z: f32) f32 {
+    if (lib_instance) |state| {
+        if (state.map.getY(.{ world_x, world_z })) |h| {
+            return h;
+        }
+    }
+    return 0.0;
+}
+
+export fn set_map_cfg(water: f32, noise: f32, tex_scale: f32, seed: u64, spawn: bool) void {
+    if (lib_instance) |state| {
+        state.map.water_level = water;
+        state.map.noise_weight = noise;
+        state.map.texture_scale = tex_scale;
+        state.map.seed = seed;
+        if (spawn) {
+            state.map.spawn(state.map.seed) catch {};
+        } else {
+            state.map.update();
+        }
+    }
+}
+
+export fn set_fbm_cfg(octaves: i32, persistence: f32, lacunarity: f32, scale: f32) void {
+    if (lib_instance) |state| {
+        state.map.octaves = @intCast(octaves);
+        state.map.persistence = persistence;
+        state.map.lacunarity = lacunarity;
+        state.map.fbm_scale = scale;
+    }
+}
+
+export fn set_world_offset(x: f32, z: f32) void {
+    if (lib_instance) |state| {
+        state.map.world_offset_x = x;
+        state.map.world_offset_z = z;
+        state.map.spawn(state.map.seed) catch {};
+    }
+}
+
+export fn set_city_cfg(num_sites: i32, num_pockets: i32, enabled: bool) void {
+    if (lib_instance) |state| {
+        if (enabled) {
+            const f_sites = @max(1.0, @as(f32, @floatFromInt(num_sites)));
+            const f_pockets = @max(1.0, @as(f32, @floatFromInt(num_pockets)));
+            const dist_size = 800.0 / (f_sites + 10.0);
+            const p_scale = f_pockets * 15.0;
+            state.map.city = city_gen.CityConfig{
+                .district_size = dist_size,
+                .pocket_scale = p_scale,
+                .pocket_threshold = 0.4,
+                .arterial_width = 0.12,
+                .subdivisions = 3,
+                .building_density = 0.8,
+                .min_building_height = 0.2,
+                .max_building_height = 4.0,
+                .min_altitude = 0.5,
+                .max_altitude = 15.0,
+            };
+        } else {
+            state.map.city = null;
+        }
+    }
+}
+
+export fn set_dungeon_map(seed: u64, type_idx: i32, magnify: i32) void {
+    if (lib_instance) |state| {
+        const d_type: @import("dungeon.zig").DungeonType = @enumFromInt(type_idx);
+        if (getDungeon(state.allocator, seed, state.map.size, @intCast(magnify), d_type)) |new_map| {
+            if (state.map.base_map) |old| {
+                state.allocator.free(old);
+            }
+            state.map.base_map = new_map;
+            state.map.spawn(state.map.seed) catch {};
+        } else |_| {
+            std.debug.print("Failed to generate dungeon map.\n", .{});
+        }
+    }
+}
+
 //}}} MAP
-//{{{ OBJ
+//{{{ HUD
 
-const Object = struct {
-    id: i32,
-    obj_type: object_gen.ObjectType,
-    x: f32,
-    z: f32,
-    y_offset: f32,
-    yaw: f32,
-    target_x: ?f32 = null,
-    target_z: ?f32 = null,
-    speed: f32 = 5.0,
-    state: f32 = 0.0,
-
-    pub fn update(self: *Object, dt: f32, others: *std.AutoHashMap(i32, Object)) void {
-        if (self.target_x) |tx| {
-            const tz = self.target_z.?;
-            const dx = tx - self.x;
-            const dz = tz - self.z;
-            const dist_sq = dx * dx + dz * dz;
-            if (dist_sq < 0.01) {
-                self.target_x = null;
-                self.target_z = null;
-                return;
-            }
-            const dist = @sqrt(dist_sq);
-            const move_amount = self.speed * dt;
-            self.x += (dx / dist) * move_amount;
-            self.z += (dz / dist) * move_amount;
-            self.yaw = std.math.atan2(dx, dz) * (180.0 / std.math.pi);
-        }
-
-        var it = others.valueIterator();
-        while (it.next()) |other| {
-            if (other.id == self.id) continue;
-            const dx = self.x - other.x;
-            const dz = self.z - other.z;
-            const dist_sq = dx * dx + dz * dz;
-            if (dist_sq < 1.0) {
-                const dist = @sqrt(dist_sq);
-                if (dist > 0.0001) {
-                    const push = (1.0 - dist) * 5.0 * dt;
-                    self.x += (dx / dist) * push;
-                    self.z += (dz / dist) * push;
-                }
-            }
-        }
-    }
-
-    pub fn draw(self: *Object, map: *Map, t: f32) void {
-        if (map.getXYZ(.{ self.x, self.z })) |pos| {
-            object_gen.drawObject(self.obj_type, pos[0], pos[1] + self.y_offset, pos[2], self.yaw, t * self.state);
-        }
-    }
+const GizmoOp = enum(u8) {
+    Text2D = 1,
+    Rect2D = 2,
+    RectLine2D = 3,
+    Line2D = 4,
+    Circle2D = 5,
+    CircleLine2D = 6,
+    Triangle2D = 7,
+    Line3D = 10,
+    Cube3D = 11,
+    Sphere3D = 12,
+    Cylinder3D = 13,
 };
 
-export fn spawn_object(id: i32, type_id: i32, x: f32, z: f32, y_off: f32) void {
-    if (lib_instance) |state| {
-        const obj = Object{
-            .id = id,
-            .obj_type = @enumFromInt(type_id),
-            .x = x,
-            .z = z,
-            .y_offset = y_off,
-            .yaw = 0.0,
-        };
-        state.objects.put(id, obj) catch {};
-    }
+var gizmo_buffer: [128 * 1024]u8 = undefined;
+var gizmo_len: usize = 0;
+
+export fn submit_gizmo_buffer(ptr: [*]const u8, len: usize) void {
+    const safe_len = @min(len, gizmo_buffer.len);
+    @memcpy(gizmo_buffer[0..safe_len], ptr[0..safe_len]);
+    gizmo_len = safe_len;
 }
 
-export fn spawn_object_by_name(id: i32, type_name: [*c]const u8, x: f32, z: f32, y_off: f32) void {
-    if (lib_instance) |state| {
-        const name_slice = std.mem.span(type_name);
-        const obj_type = object_gen.ObjectType.fromString(name_slice);
-        const obj = Object{
-            .id = id,
-            .obj_type = obj_type,
-            .x = x,
-            .z = z,
-            .y_offset = y_off,
-            .yaw = 0.0,
-        };
-        state.objects.put(id, obj) catch {};
-    }
+fn readInt(reader: anytype, comptime T: type) !T {
+    return reader.readInt(T, .little);
 }
 
-export fn despawn_object(id: i32) void {
-    if (lib_instance) |state| {
-        _ = state.objects.remove(id);
-    }
+fn readFloat(reader: anytype) !f32 {
+    const bits = try reader.readInt(u32, .little);
+    return @bitCast(bits);
 }
 
-export fn set_object_target(id: i32, target_x: f32, target_z: f32, speed: f32) void {
-    if (lib_instance) |state| {
-        if (state.objects.getPtr(id)) |obj| {
-            obj.target_x = target_x;
-            obj.target_z = target_z;
-            obj.speed = speed;
+fn readColor(reader: anytype) !ray.Color {
+    const r = try reader.readByte();
+    const g = try reader.readByte();
+    const b = try reader.readByte();
+    const a = try reader.readByte();
+    return ray.Color{ .r = r, .g = g, .b = b, .a = a };
+}
+
+fn render_gizmos(phase: enum { World3D, Screen2D }) void {
+    var fbs = std.io.fixedBufferStream(gizmo_buffer[0..gizmo_len]);
+    var reader = fbs.reader();
+
+    while (true) {
+        const op_byte = reader.readByte() catch break;
+        const op: GizmoOp = @enumFromInt(op_byte);
+        switch (op) {
+            .Text2D => {
+                const x = readFloat(reader) catch break;
+                const y = readFloat(reader) catch break;
+                const size = readInt(reader, i32) catch break;
+                const color = readColor(reader) catch break;
+                const len = reader.readByte() catch break;
+                if (phase == .Screen2D) {
+                    var buf: [256]u8 = undefined;
+                    const safe_len = @min(len, 255);
+                    _ = reader.read(buf[0..safe_len]) catch break;
+                    buf[safe_len] = 0;
+                    ray.DrawText(@ptrCast(&buf), @intFromFloat(x), @intFromFloat(y), size, color);
+                    if (len > 255) fbs.seekBy(len - 255) catch break;
+                } else {
+                    fbs.seekBy(len) catch break;
+                }
+            },
+            .Rect2D => {
+                const x = readFloat(reader) catch break;
+                const y = readFloat(reader) catch break;
+                const w = readFloat(reader) catch break;
+                const h = readFloat(reader) catch break;
+                const color = readColor(reader) catch break;
+                if (phase == .Screen2D) ray.DrawRectangle(@intFromFloat(x), @intFromFloat(y), @intFromFloat(w), @intFromFloat(h), color);
+            },
+            .RectLine2D => {
+                const x = readFloat(reader) catch break;
+                const y = readFloat(reader) catch break;
+                const w = readFloat(reader) catch break;
+                const h = readFloat(reader) catch break;
+                const thick = readFloat(reader) catch break;
+                const color = readColor(reader) catch break;
+                if (phase == .Screen2D) ray.DrawRectangleLinesEx(.{ .x = x, .y = y, .width = w, .height = h }, thick, color);
+            },
+            .Line2D => {
+                const x1 = readFloat(reader) catch break;
+                const y1 = readFloat(reader) catch break;
+                const x2 = readFloat(reader) catch break;
+                const y2 = readFloat(reader) catch break;
+                const thick = readFloat(reader) catch break;
+                const color = readColor(reader) catch break;
+                if (phase == .Screen2D) ray.DrawLineEx(.{ .x = x1, .y = y1 }, .{ .x = x2, .y = y2 }, thick, color);
+            },
+            .Circle2D => {
+                const x = readFloat(reader) catch break;
+                const y = readFloat(reader) catch break;
+                const r = readFloat(reader) catch break;
+                const color = readColor(reader) catch break;
+                if (phase == .Screen2D) ray.DrawCircle(@intFromFloat(x), @intFromFloat(y), r, color);
+            },
+            .CircleLine2D => {
+                const x = readFloat(reader) catch break;
+                const y = readFloat(reader) catch break;
+                const r = readFloat(reader) catch break;
+                const thick = readFloat(reader) catch break;
+                const color = readColor(reader) catch break;
+                if (phase == .Screen2D) ray.DrawRing(.{ .x = x, .y = y }, r - thick, r, 0, 360, 32, color);
+            },
+            .Triangle2D => {
+                const x1 = readFloat(reader) catch break;
+                const y1 = readFloat(reader) catch break;
+                const x2 = readFloat(reader) catch break;
+                const y2 = readFloat(reader) catch break;
+                const x3 = readFloat(reader) catch break;
+                const y3 = readFloat(reader) catch break;
+                const color = readColor(reader) catch break;
+                if (phase == .Screen2D) ray.DrawTriangle(.{ .x = x1, .y = y1 }, .{ .x = x2, .y = y2 }, .{ .x = x3, .y = y3 }, color);
+            },
+            .Line3D => {
+                const x1 = readFloat(reader) catch break;
+                const y1 = readFloat(reader) catch break;
+                const z1 = readFloat(reader) catch break;
+                const x2 = readFloat(reader) catch break;
+                const y2 = readFloat(reader) catch break;
+                const z2 = readFloat(reader) catch break;
+                const color = readColor(reader) catch break;
+                if (phase == .World3D) ray.DrawLine3D(.{ .x = x1, .y = y1, .z = z1 }, .{ .x = x2, .y = y2, .z = z2 }, color);
+            },
+            .Cube3D => {
+                const x = readFloat(reader) catch break;
+                const y = readFloat(reader) catch break;
+                const z = readFloat(reader) catch break;
+                const tx = readFloat(reader) catch break;
+                const ty = readFloat(reader) catch break;
+                const tz = readFloat(reader) catch break;
+                const thick = readFloat(reader) catch break;
+                const color = readColor(reader) catch break;
+                if (phase == .World3D) {
+                    object_gen.drawShape(.{ .x = x, .y = y, .z = z }, .{ .x = tx, .y = ty, .z = tz }, .{ .shape = .Cube, .radius = thick, .color = color });
+                }
+            },
+            .Sphere3D => {
+                const x = readFloat(reader) catch break;
+                const y = readFloat(reader) catch break;
+                const z = readFloat(reader) catch break;
+                const rad = readFloat(reader) catch break;
+                const color = readColor(reader) catch break;
+                if (phase == .World3D) ray.DrawSphere(.{ .x = x, .y = y, .z = z }, rad, color);
+            },
+            .Cylinder3D => {
+                const x = readFloat(reader) catch break;
+                const y = readFloat(reader) catch break;
+                const z = readFloat(reader) catch break;
+                const tx = readFloat(reader) catch break;
+                const ty = readFloat(reader) catch break;
+                const tz = readFloat(reader) catch break;
+                const thick = readFloat(reader) catch break;
+                const color = readColor(reader) catch break;
+                if (phase == .World3D) {
+                    object_gen.drawShape(.{ .x = x, .y = y, .z = z }, .{ .x = tx, .y = ty, .z = tz }, .{ .shape = .Cylinder, .radius = thick, .color = color });
+                }
+            },
         }
     }
 }
 
-export fn stop_object(id: i32) void {
-    if (lib_instance) |state| {
-        if (state.objects.getPtr(id)) |obj| {
-            obj.target_x = null;
-            obj.target_z = null;
-        }
-    }
+fn render_overlays_2d() void {
+    render_gizmos(.Screen2D);
 }
 
-export fn get_object_position(id: i32, x: *f32, z: *f32, y_off: *f32) bool {
-    if (lib_instance) |state| {
-        if (state.objects.get(id)) |obj| {
-            x.* = obj.x;
-            z.* = obj.z;
-            y_off.* = obj.y_offset;
-            return true;
-        }
-    }
-    return false;
+fn render_overlays_3d() void {
+    render_gizmos(.World3D);
 }
 
-export fn set_object_position(id: i32, x: f32, z: f32, y_off: f32) void {
-    if (lib_instance) |state| {
-        if (state.objects.getPtr(id)) |obj| {
-            obj.x = x;
-            obj.z = z;
-            obj.y_offset = y_off;
-        }
-    }
-}
-
-export fn set_object_state(id: i32, state_val: f32) void {
-    if (lib_instance) |state| {
-        if (state.objects.getPtr(id)) |obj| {
-            obj.state = state_val;
-        }
-    }
-}
-
-//}}} OBJ
+//}}} HUD
 //{{{ INP
 
 const Input = struct {
     state: *State,
-    last_ground_click: ray.Vector3 = .{ .x = 0, .y = 0, .z = 0 },
+
+    last_ground_click: ?ray.Vector3 = null,
     selection_start: ray.Vector2 = .{ .x = 0, .y = 0 },
     is_selecting: bool = false,
     selected_units: std.ArrayList(i32),
@@ -392,26 +954,27 @@ const Input = struct {
 
     fn onRegenerate(self: *Input) void {
         self.state.map.spawn(getSeed()) catch {};
-        self.state.user.reset();
     }
 
     fn onWaterUp(self: *Input) void {
-        self.state.map.water_level += 0.8;
+        if (self.state.map.water_level > std.mem.max(f32, self.state.map.terrain) * CUBE_HEIGHT + 1.0) return;
+        self.state.map.water_level += 0.03;
         self.state.map.update();
     }
 
     fn onWaterDown(self: *Input) void {
-        self.state.map.water_level -= 0.8;
+        if (self.state.map.water_level < std.mem.min(f32, self.state.map.terrain) * CUBE_HEIGHT - 1.0) return;
+        self.state.map.water_level -= 0.03;
         self.state.map.update();
     }
 
     fn onRoughnessUp(self: *Input) void {
-        self.state.map.noise_weight += 0.05;
+        self.state.map.noise_weight += 0.1;
         self.state.map.spawn(self.state.map.seed) catch {};
     }
 
     fn onRoughnessDown(self: *Input) void {
-        self.state.map.noise_weight = @max(0, self.state.map.noise_weight - 0.05);
+        self.state.map.noise_weight = @max(0, self.state.map.noise_weight - 0.1);
         self.state.map.spawn(self.state.map.seed) catch {};
     }
 
@@ -430,11 +993,13 @@ const Input = struct {
     }
 
     fn onSkyLighter(self: *Input) void {
-        self.state.sky_hsv.z = @min(1.0, self.state.sky_hsv.z + 0.01);
+        self.state.sky_hsv.y -= 0.5;
+        if (self.state.sky_hsv.y < 0.0) self.state.sky_hsv.y += 360.0;
     }
 
     fn onSkyDarker(self: *Input) void {
-        self.state.sky_hsv.z = @max(0.05, self.state.sky_hsv.z - 0.01);
+        self.state.sky_hsv.y += 0.5;
+        if (self.state.sky_hsv.y >= 360.0) self.state.sky_hsv.y -= 360.0;
     }
 
     fn onResetCamera(self: *Input) void {
@@ -449,12 +1014,13 @@ const Input = struct {
     }
 
     fn onUpdateSelection(self: *Input) void {
-        if (!(ray.IsKeyDown(ray.KEY_LEFT_SHIFT))) {
+        if (self.state.user.mode == .tpv and !(ray.IsKeyDown(ray.KEY_LEFT_SHIFT))) {
             self.state.user.orbit();
         }
     }
 
     fn onEndSelection(self: *Input) void {
+        self.last_ground_click = null;
         defer self.is_selecting = false;
         const mouse_curr = ray.GetMousePosition();
         const mouse_start = self.selection_start;
@@ -467,44 +1033,34 @@ const Input = struct {
             };
             var it = self.state.objects.valueIterator();
             while (it.next()) |obj| {
-                const pos = self.state.map.getXYZ(.{ obj.x, obj.z }) orelse continue;
-                const screen_pos = ray.GetWorldToScreen(.{ .x = pos[0], .y = pos[1] + obj.y_offset, .z = pos[2] }, self.state.user.camera);
+                const y = self.state.map.getY(.{ obj.x, obj.z }) orelse continue;
+                const screen_pos = ray.GetWorldToScreen(.{ .x = obj.x, .y = y + obj.y_offset, .z = obj.z }, self.state.user.camera);
                 if (ray.CheckCollisionPointRec(screen_pos, rect)) {
                     self.selected_units.append(obj.id) catch {};
                 }
             }
         } else {
-            var ray_pos = mouse_curr;
-            if (self.state.user.mode == .fpv) {
-                ray_pos.x = @as(f32, @floatFromInt(WINDOW_WIDTH)) / 2.0;
-                ray_pos.y = @as(f32, @floatFromInt(WINDOW_HEIGHT)) / 2.0;
-            }
-            const mouse_ray = ray.GetMouseRay(ray_pos, self.state.user.camera);
+            const mouse_ray = ray.GetMouseRay(mouse_curr, self.state.user.camera);
             var closest_dist: f32 = std.math.inf(f32);
             var closest_id: i32 = -1;
-            var it_closest = self.state.objects.valueIterator();
-            while (it_closest.next()) |obj| {
-                const pos = self.state.map.getXYZ(.{ obj.x, obj.z }) orelse continue;
-                const hit = ray.GetRayCollisionSphere(mouse_ray, .{ .x = pos[0], .y = pos[1] + obj.y_offset, .z = pos[2] }, 1.0);
+            var it = self.state.objects.valueIterator();
+            while (it.next()) |obj| {
+                const world_y = self.state.map.getY(.{ obj.x, obj.z }) orelse 0;
+                const pos = ray.Vector3{ .x = obj.x, .y = world_y + obj.y_offset, .z = obj.z };
+                const hit = ray.GetRayCollisionSphere(mouse_ray, pos, 1.0);
                 if (hit.hit and hit.distance < closest_dist) {
                     closest_dist = hit.distance;
                     closest_id = obj.id;
                 }
             }
-            const terrain_hit = ray.GetRayCollisionMesh(mouse_ray, self.state.map.model.meshes[0], ray.MatrixIdentity());
-            const terrain_blocked = terrain_hit.hit and (terrain_hit.distance < closest_dist);
-            if (closest_id != -1 and !terrain_blocked) {
+            const terrain_hit = ray.GetRayCollisionMesh(mouse_ray, self.state.map.model.meshes[0], ray.MatrixTranslate(self.state.map.world_offset_x, 0, self.state.map.world_offset_z));
+            if (closest_id != -1 and (terrain_hit.hit == false or closest_dist < terrain_hit.distance)) {
                 self.selected_units.append(closest_id) catch {};
             } else if (terrain_hit.hit) {
-                const half_size = self.state.map.rendered_size / 2.0;
-                self.last_ground_click = .{
-                    .x = (terrain_hit.point.x + half_size) / CUBE_BASE,
-                    .y = terrain_hit.point.y,
-                    .z = (terrain_hit.point.z + half_size) / CUBE_BASE,
-                };
+                self.last_ground_click = terrain_hit.point;
             }
-            if (self.state.hook) |hook| hook(2, -1);
         }
+        if (self.state.hook) |hook| hook(2, -1);
     }
 
     fn onToggleSpawn(self: *Input) void {
@@ -517,6 +1073,7 @@ const Input = struct {
                 }
             },
             .fpv => self.state.user.reset(),
+            else => return,
         }
     }
 
@@ -553,24 +1110,28 @@ const Input = struct {
     }
 };
 
-export fn get_last_click_position(x: *f32, y: *f32, z: *f32) void {
+export fn get_last_click_position(x: *f32, y: *f32, z: *f32) bool {
     if (lib_instance) |state| {
-        x.* = state.input.last_ground_click.x;
-        y.* = state.input.last_ground_click.y;
-        z.* = state.input.last_ground_click.z;
+        if (state.input.last_ground_click) |pos| {
+            x.* = pos.x;
+            y.* = pos.y;
+            z.* = pos.z;
+            return true;
+        }
     }
+    return false;
 }
 
-export fn get_selected_count() i32 {
-    if (lib_instance) |state| return @intCast(state.input.selected_units.items.len);
+export fn get_selected_ids(buffer: [*c]i32, capacity: usize) i32 {
+    if (lib_instance) |state| {
+        const items = state.input.selected_units.items;
+        const len = @min(items.len, capacity);
+        if (len > 0) {
+            @memcpy(buffer[0..len], items[0..len]);
+        }
+        return @intCast(len);
+    }
     return 0;
-}
-
-export fn get_selected_ids(buffer: [*c]i32, capacity: usize) void {
-    if (lib_instance) |state| {
-        const len = @min(state.input.selected_units.items.len, capacity);
-        @memcpy(buffer[0..len], state.input.selected_units.items[0..len]);
-    }
 }
 
 export fn set_selected_ids(buffer: [*c]const i32, count: usize) void {
@@ -583,109 +1144,33 @@ export fn set_selected_ids(buffer: [*c]const i32, count: usize) void {
     }
 }
 
-//}}} INP
-//{{{ USER
-
-const User = struct {
-    camera: ray.Camera3D,
-    mode: enum { fpv, tpv },
-    init_pos: ray.Vector3,
-    init_tgt: ray.Vector3,
-    height: f32,
-
-    fn init(size: usize) User {
-        ray.EnableCursor();
-        const physical_size = @as(f32, @floatFromInt(size - 1)) * CUBE_BASE;
-        const dist = physical_size * 0.8;
-        const init_pos = ray.Vector3{ .x = dist, .y = dist, .z = dist };
-        const init_tgt = ray.Vector3{ .x = 0.0, .y = -dist * 0.2, .z = 0.0 };
-        return .{
-            .camera = ray.Camera3D{
-                .position = init_pos,
-                .target = init_tgt,
-                .up = .{ .x = 0.0, .y = 1.0, .z = 0.0 },
-                .fovy = 45.0,
-                .projection = ray.CAMERA_PERSPECTIVE,
-            },
-            .mode = .tpv,
-            .init_pos = init_pos,
-            .init_tgt = init_tgt,
-            .height = 0.7,
-        };
-    }
-
-    fn update(self: *User, map: *Map) void {
-        switch (self.mode) {
-            .fpv => {
-                const old_pos = self.camera.position;
-                ray.UpdateCamera(&self.camera, ray.CAMERA_FIRST_PERSON);
-                if (map.getY(.{ self.camera.position.x, self.camera.position.z }, true)) |h| {
-                    if (h > old_pos.y) {
-                        self.camera.position = old_pos;
-                    } else {
-                        self.camera.position.y = h + self.height;
-                    }
-                } else {
-                    self.camera.position = old_pos;
-                }
-            },
-            .tpv => {
-                const wheel = ray.GetMouseWheelMove();
-                if (wheel != 0) self.zoom(wheel);
-            },
-        }
-    }
-
-    fn spawn(self: *User, pos: ray.Vector3) void {
-        self.camera.position = .{ .x = pos.x, .y = pos.y + self.height, .z = pos.z };
-        self.camera.target = .{ .x = 0.0, .y = pos.y, .z = 0.0 };
-        ray.DisableCursor();
-        self.mode = .fpv;
-    }
-
-    fn orbit(self: *User) void {
-        const sens = 0.003;
-        const delta = ray.GetMouseDelta();
-        const r = std.math.sqrt(self.camera.position.x * self.camera.position.x + self.camera.position.y * self.camera.position.y + self.camera.position.z * self.camera.position.z);
-        var ax = std.math.asin(self.camera.position.y / r);
-        var ay = std.math.atan2(self.camera.position.z, self.camera.position.x);
-        ax = std.math.clamp(ax + delta.y * sens, -std.math.pi / 3.0, std.math.pi / 3.0);
-        ay -= delta.x * sens;
-        self.camera.position.x = @cos(ay) * @cos(ax) * r;
-        self.camera.position.y = @sin(ax) * r;
-        self.camera.position.z = @sin(ay) * @cos(ax) * r;
-    }
-
-    fn zoom(self: *User, amount: f32) void {
-        const f = 1.0 - amount * 0.05;
-        self.camera.position.x *= f;
-        self.camera.position.y *= f;
-        self.camera.position.z *= f;
-    }
-
-    fn reset(self: *User) void {
-        self.camera.position = self.init_pos;
-        self.camera.target = self.init_tgt;
-        self.camera.projection = ray.CAMERA_PERSPECTIVE;
-        ray.EnableCursor();
-        self.mode = .tpv;
-    }
-};
-
-export fn get_user_status(x: *f32, y: *f32, z: *f32) bool {
+export fn trigger_input_handler(index: usize) void {
     if (lib_instance) |state| {
-        if (state.user.mode == .fpv) {
-            const half = @as(f32, @floatFromInt(state.map.size)) * CUBE_BASE / 2.0;
-            x.* = (state.user.camera.position.x + half) / CUBE_BASE;
-            z.* = (state.user.camera.position.z + half) / CUBE_BASE;
-            y.* = state.user.camera.position.y;
-            return true;
+        if (index < Input.bindings.len) {
+            const bind = Input.bindings[index];
+            std.debug.print("Directly triggering handler for binding index: {}\n", .{index});
+            bind.handler(&state.input);
+        } else {
+            std.debug.print("Error: Binding index {} out of range (max {})\n", .{ index, Input.bindings.len - 1 });
         }
     }
-    return false;
 }
 
-//}}} USER
+export fn is_key_down(key: i32) bool {
+    return ray.IsKeyDown(key);
+}
+
+export fn is_mouse_button_down(button: i32) bool {
+    return ray.IsMouseButtonDown(button);
+}
+
+export fn get_mouse_delta(x: *f32, y: *f32) void {
+    const delta = ray.GetMouseDelta();
+    x.* = delta.x;
+    y.* = delta.y;
+}
+
+//}}} INP
 //{{{ CHAT
 
 const Chat = struct {
@@ -744,7 +1229,7 @@ export fn start_dialogue(npc_id: i32) void {
         ray.ClearBackground(bg_color);
         ray.BeginMode3D(state.user.camera);
         state.drawObjects();
-        state.map.draw();
+        state.map.draw(state.user.camera.position.x, state.user.camera.position.z);
         ray.EndMode3D();
         ray.EndTextureMode();
         state.chat = Chat.init(state.allocator, frozen_bg) catch |err| {
@@ -829,6 +1314,8 @@ fn getDungeon(allocator: std.mem.Allocator, seed: u64, size: usize, magnify: usi
 }
 
 pub fn main() !void {
+    const builtin = @import("builtin");
+    if (builtin.os.tag == .emscripten) return;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     ray.InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Zigon Terrain");
@@ -849,6 +1336,8 @@ pub fn main() !void {
             const wfc_map = try getDungeon(state.allocator, state.map.seed, state.map.size, build_config.dungeon_magnify, @enumFromInt(build_config.dungeon_type));
             if (state.map.base_map) |base| state.allocator.free(base);
             state.map.base_map = wfc_map;
+            state.map.noise_weight = 0.0;
+            state.map.water_level = -0.9;
             try state.map.spawn(state.map.seed);
         }
     }
@@ -859,6 +1348,62 @@ pub fn main() !void {
 }
 
 //}}} MAIN
+//{{{ WASM
+
+export fn main_wasm() void {
+    const builtin = @import("builtin");
+    const is_web = builtin.target.os.tag == .emscripten;
+    std.debug.print("GOGO: Starting initialization...\n", .{});
+    ray.InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Walk");
+    const allocator = std.heap.c_allocator;
+    const seed = getSeed();
+    lib_instance = State.create(allocator, build_config.map_size, seed) catch |err| {
+        std.debug.print("FATAL: State.create failed: {}\n", .{err});
+        return;
+    };
+    std.debug.print("GOGO: Initialization success! Starting loop...\n", .{});
+    if (is_web) {
+        const emscripten = struct {
+            extern "c" fn emscripten_set_main_loop(
+                func: *const fn () callconv(.C) void,
+                fps: c_int,
+                simulate_infinite_loop: c_int,
+            ) void;
+        };
+        emscripten.emscripten_set_main_loop(gameLoop, 0, 0);
+    } else {
+        while (!ray.WindowShouldClose()) {
+            gameLoop();
+        }
+        ray.CloseWindow();
+        if (lib_instance) |state| state.destroy();
+    }
+}
+
+export fn gameLoop() void {
+    if (lib_instance) |state| {
+        state.update() catch |err| {
+            std.debug.print("Update error: {}\n", .{err});
+        };
+        ray.BeginDrawing();
+        defer ray.EndDrawing();
+        ray.ClearBackground(ray.Color{ .r = 135, .g = 206, .b = 235, .a = 255 });
+        ray.BeginMode3D(state.user.camera);
+        state.map.draw(state.user.camera.position.x, state.user.camera.position.z);
+        render_overlays_3d();
+        ray.EndMode3D();
+        render_overlays_2d();
+        ray.DrawFPS(10, 10);
+    } else {
+        ray.BeginDrawing();
+        defer ray.EndDrawing();
+        ray.ClearBackground(ray.RED);
+        ray.DrawText("INITIALIZATION FAILED", 20, 20, 20, ray.WHITE);
+        ray.DrawText("Open Browser Console (F12) for details", 20, 50, 20, ray.WHITE);
+    }
+}
+
+//}}} WASM
 //{{{ STATE
 
 const State = struct {
@@ -867,7 +1412,9 @@ const State = struct {
     input: Input,
     map: Map,
     objects: std.AutoHashMap(i32, Object),
+    model_cache: std.StringHashMap(ray.Model),
     chat: ?Chat,
+    charms: [MAX_CHARMS]Charm,
     hook: ?*const fn (i32, i32) callconv(.C) void,
     sky_hsv: ray.Vector3,
     time: f32,
@@ -878,8 +1425,10 @@ const State = struct {
         self.input = Input.init(self, allocator);
         self.user = User.init(size);
         self.objects = std.AutoHashMap(i32, Object).init(allocator);
-        self.sky_hsv = .{ .x = 200.0, .y = 0.4, .z = 0.9 };
+        self.model_cache = std.StringHashMap(ray.Model).init(allocator);
+        self.sky_hsv = .{ .x = 200.0, .y = 90, .z = 0.9 };
         self.chat = null;
+        self.charms = [1]Charm{.{}} ** MAX_CHARMS;
         self.hook = null;
         self.map = try Map.init(allocator, size, seed);
         self.time = 0.0;
@@ -887,10 +1436,21 @@ const State = struct {
     }
 
     pub fn destroy(self: *State) void {
-        self.input.deinit();
+        var it = self.objects.valueIterator();
+        while (it.next()) |obj| {
+            obj.deinit();
+        }
+        var cache_it = self.model_cache.iterator();
+        while (cache_it.next()) |entry| {
+            ray.UnloadModel(entry.value_ptr.*);
+            self.allocator.free(entry.key_ptr.*);
+        }
+        self.model_cache.deinit();
         self.map.deinit();
         self.objects.deinit();
-        if (self.chat) |*cm| cm.deinit();
+        if (self.chat) |*c| c.deinit();
+        for (&self.charms) |*c| c.unload();
+        self.input.deinit();
         self.allocator.destroy(self);
     }
 
@@ -910,15 +1470,7 @@ const State = struct {
         while (it.next()) |obj| {
             obj.update(dt, &self.objects);
         }
-
         self.input.update();
-    }
-
-    fn drawObjects(self: *State) void {
-        var it = self.objects.valueIterator();
-        while (it.next()) |obj| {
-            obj.draw(&self.map, self.time);
-        }
     }
 
     pub fn draw(self: *State) void {
@@ -928,20 +1480,144 @@ const State = struct {
             cm.draw();
             return;
         } else {
-            const bg_color = ray.ColorFromHSV(self.sky_hsv.x, self.sky_hsv.y, self.sky_hsv.z);
-            ray.ClearBackground(bg_color);
+            ray.ClearBackground(ray.BLACK);
             ray.BeginMode3D(self.user.camera);
+            self.drawSky();
+            self.map.draw(self.user.camera.position.x, self.user.camera.position.z);
             self.drawObjects();
-            self.map.draw();
+            for (self.charms) |c| c.draw();
             ray.EndMode3D();
             self.input.draw();
+            render_overlays_2d();
+        }
+    }
+
+    fn drawObjects(self: *State) void {
+        var it = self.objects.valueIterator();
+        while (it.next()) |obj| {
+            obj.draw(&self.map, self.time);
+        }
+    }
+
+    fn drawSky(self: *State) void {
+        const center = self.user.camera.position;
+        const radius: f32 = 400.0;
+        const time_deg = self.sky_hsv.y;
+        const time_rad = time_deg * std.math.pi / 180.0;
+        const sun_x = @cos(time_rad) * radius;
+        const sun_y = @sin(time_rad) * radius;
+        const sun_pos = ray.Vector3{ .x = center.x + sun_x, .y = center.y + sun_y, .z = center.z };
+        const Palette = struct {
+            zenith: ray.Color,
+            horizon: ray.Color,
+            sun_core: ray.Color,
+            sun_glow: ray.Color,
+        };
+        const p_sunrise = Palette{
+            .zenith = .{ .r = 60, .g = 120, .b = 200, .a = 255 },
+            .horizon = .{ .r = 255, .g = 240, .b = 160, .a = 255 },
+            .sun_core = .{ .r = 255, .g = 220, .b = 50, .a = 255 },
+            .sun_glow = .{ .r = 255, .g = 200, .b = 100, .a = 255 },
+        };
+        const p_noon = Palette{
+            .zenith = .{ .r = 100, .g = 150, .b = 230, .a = 255 },
+            .horizon = .{ .r = 135, .g = 206, .b = 235, .a = 255 },
+            .sun_core = .{ .r = 255, .g = 255, .b = 240, .a = 255 },
+            .sun_glow = .{ .r = 255, .g = 255, .b = 255, .a = 255 },
+        };
+        const p_sunset = Palette{
+            .zenith = .{ .r = 80, .g = 100, .b = 160, .a = 255 },
+            .horizon = .{ .r = 220, .g = 180, .b = 210, .a = 255 },
+            .sun_core = .{ .r = 255, .g = 200, .b = 180, .a = 255 },
+            .sun_glow = .{ .r = 230, .g = 150, .b = 200, .a = 255 },
+        };
+        const p_night = Palette{
+            .zenith = .{ .r = 20, .g = 30, .b = 50, .a = 255 },
+            .horizon = .{ .r = 40, .g = 60, .b = 90, .a = 255 },
+            .sun_core = .{ .r = 0, .g = 0, .b = 0, .a = 0 },
+            .sun_glow = .{ .r = 0, .g = 0, .b = 0, .a = 0 },
+        };
+        const mix = struct {
+            fn col(c1: ray.Color, c2: ray.Color, t: f32) ray.Color {
+                return ray.Color{
+                    .r = @intCast(@as(i32, @intFromFloat(@as(f32, @floatFromInt(c1.r)) + (@as(f32, @floatFromInt(c2.r)) - @as(f32, @floatFromInt(c1.r))) * t))),
+                    .g = @intCast(@as(i32, @intFromFloat(@as(f32, @floatFromInt(c1.g)) + (@as(f32, @floatFromInt(c2.g)) - @as(f32, @floatFromInt(c1.g))) * t))),
+                    .b = @intCast(@as(i32, @intFromFloat(@as(f32, @floatFromInt(c1.b)) + (@as(f32, @floatFromInt(c2.b)) - @as(f32, @floatFromInt(c1.b))) * t))),
+                    .a = 255,
+                };
+            }
+            fn pal(p1: Palette, p2: Palette, t: f32) Palette {
+                return Palette{
+                    .zenith = col(p1.zenith, p2.zenith, t),
+                    .horizon = col(p1.horizon, p2.horizon, t),
+                    .sun_core = col(p1.sun_core, p2.sun_core, t),
+                    .sun_glow = col(p1.sun_glow, p2.sun_glow, t),
+                };
+            }
+        }.pal;
+        var curr: Palette = undefined;
+        if (time_deg < 90.0) {
+            curr = mix(p_sunrise, p_noon, time_deg / 90.0);
+        } else if (time_deg < 180.0) {
+            curr = mix(p_noon, p_sunset, (time_deg - 90.0) / 90.0);
+        } else if (time_deg < 270.0) {
+            curr = mix(p_sunset, p_night, (time_deg - 180.0) / 90.0);
+        } else {
+            curr = mix(p_night, p_sunrise, (time_deg - 270.0) / 90.0);
+        }
+        const y_top_point = center.y + 400.0;
+        const y_top_ring = center.y + 200.0;
+        const y_bot_ring = center.y - 50.0;
+        const y_bot_point = center.y - 400.0;
+        ray.rlDisableDepthMask();
+        ray.rlDisableBackfaceCulling();
+        ray.rlBegin(ray.RL_TRIANGLES);
+        const segments = 32;
+        const step = 360.0 / @as(f32, @floatFromInt(segments));
+        var angle: f32 = 0.0;
+        while (angle < 360.0) : (angle += step) {
+            const a1_rad = angle * std.math.pi / 180.0;
+            const a2_rad = (angle + step) * std.math.pi / 180.0;
+            const c1 = @cos(a1_rad);
+            const s1 = @sin(a1_rad);
+            const c2 = @cos(a2_rad);
+            const s2 = @sin(a2_rad);
+            ray.rlColor4ub(curr.zenith.r, curr.zenith.g, curr.zenith.b, curr.zenith.a);
+            ray.rlVertex3f(center.x, y_top_point, center.z);
+            ray.rlVertex3f(center.x + c1 * radius, y_top_ring, center.z + s1 * radius);
+            ray.rlVertex3f(center.x + c2 * radius, y_top_ring, center.z + s2 * radius);
+            ray.rlColor4ub(curr.zenith.r, curr.zenith.g, curr.zenith.b, curr.zenith.a);
+            ray.rlVertex3f(center.x + c1 * radius, y_top_ring, center.z + s1 * radius);
+            ray.rlColor4ub(curr.horizon.r, curr.horizon.g, curr.horizon.b, curr.horizon.a);
+            ray.rlVertex3f(center.x + c1 * radius, y_bot_ring, center.z + s1 * radius);
+            ray.rlVertex3f(center.x + c2 * radius, y_bot_ring, center.z + s2 * radius);
+            ray.rlVertex3f(center.x + c2 * radius, y_bot_ring, center.z + s2 * radius);
+            ray.rlColor4ub(curr.zenith.r, curr.zenith.g, curr.zenith.b, curr.zenith.a);
+            ray.rlVertex3f(center.x + c2 * radius, y_top_ring, center.z + s2 * radius);
+            ray.rlVertex3f(center.x + c1 * radius, y_top_ring, center.z + s1 * radius);
+            const n_col = ray.Color{ .r = 205, .g = 240, .b = 255, .a = 255 };
+            ray.rlColor4ub(curr.horizon.r, curr.horizon.g, curr.horizon.b, curr.horizon.a);
+            ray.rlVertex3f(center.x + c2 * radius, y_bot_ring, center.z + s2 * radius);
+            ray.rlVertex3f(center.x + c1 * radius, y_bot_ring, center.z + s1 * radius);
+            ray.rlColor4ub(n_col.r, n_col.g, n_col.b, n_col.a);
+            ray.rlVertex3f(center.x, y_bot_point, center.z);
+        }
+        ray.rlEnd();
+        ray.rlEnableBackfaceCulling();
+        ray.rlEnableDepthMask();
+        if (sun_pos.y > center.y - 100.0) {
+            ray.DrawSphere(sun_pos, 35.0, curr.sun_core);
+            ray.DrawSphere(sun_pos, 60.0, ray.ColorAlpha(curr.sun_glow, 0.25));
         }
     }
 };
 
+//}}} STATE
+//{{{ VIDEO
+
 var lib_instance: ?*State = null;
 
-export fn init_state(seed: u64, size: i32) void {
+export fn init_state(size: i32, seed: u64) void {
     if (lib_instance != null) return;
     if (!ray.IsWindowReady()) {
         ray.InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Zigon Terrain");
@@ -975,4 +1651,133 @@ export fn start_loop() void {
     }
 }
 
-//}}} STATE
+export fn enable_high_dpi() void {
+    ray.SetConfigFlags(ray.FLAG_WINDOW_HIGHDPI);
+}
+
+export fn get_screen_size(width: *i32, height: *i32) void {
+    width.* = ray.GetScreenWidth();
+    height.* = ray.GetScreenHeight();
+}
+
+export fn get_render_size(width: *i32, height: *i32) void {
+    width.* = ray.GetRenderWidth();
+    height.* = ray.GetRenderHeight();
+}
+
+export fn render_frame() bool {
+    if (lib_instance) |state| {
+        if (ray.WindowShouldClose()) return false;
+        state.update() catch {};
+        state.draw();
+        return true;
+    }
+    return false;
+}
+
+export fn set_mouse_cursor(visible: bool) void {
+    if (visible) {
+        ray.EnableCursor();
+    } else {
+        ray.DisableCursor();
+    }
+}
+
+export fn capture_frame(buffer: [*c]u8, capacity: usize) void {
+    const w = ray.GetRenderWidth();
+    const h = ray.GetRenderHeight();
+    const size = @as(usize, @intCast(w * h * 4));
+    if (size <= capacity) {
+        const gl_pixels = ray.rlReadScreenPixels(w, h);
+        if (gl_pixels == null) return;
+        defer std.c.free(gl_pixels);
+        @memcpy(buffer[0..size], gl_pixels[0..size]);
+    }
+}
+
+//}}} VIDEO
+//{{{ CHARM
+
+const MAX_CHARMS: usize = 8;
+
+const Charm = struct {
+    model: ?ray.Model = null,
+    visible: bool = true,
+    init_scale: f32 = 1.0,
+    init_rot: ray.Vector3 = .{ .x = 0, .y = 0, .z = 0 },
+    init_offset: ray.Vector3 = .{ .x = 0, .y = 0, .z = 0 },
+    pos: ray.Vector3 = .{ .x = 0, .y = 0, .z = 0 },
+    target: ray.Vector3 = .{ .x = 0, .y = 0, .z = 1 },
+    up: ray.Vector3 = .{ .x = 0, .y = 1, .z = 0 },
+
+    pub fn draw(self: @This()) void {
+        var model = self.model orelse return;
+        if (!self.visible) return;
+        const mat_offset = ray.MatrixTranslate(self.init_offset.x, self.init_offset.y, self.init_offset.z);
+        const mat_rot = ray.MatrixRotateXYZ(self.init_rot);
+        const mat_scale = ray.MatrixScale(self.init_scale, self.init_scale, self.init_scale);
+        const mat_local = ray.MatrixMultiply(ray.MatrixMultiply(mat_offset, mat_rot), mat_scale);
+        const mat_look = ray.MatrixLookAt(self.pos, self.target, self.up);
+        const mat_world = ray.MatrixInvert(mat_look);
+        model.transform = ray.MatrixMultiply(mat_local, mat_world);
+        ray.DrawModel(model, .{ .x = 0, .y = 0, .z = 0 }, 1.0, ray.GRAY);
+    }
+
+    pub fn unload(self: *Charm) void {
+        if (self.model) |m| ray.UnloadModel(m);
+        self.* = Charm{};
+    }
+};
+
+fn getCharm(slot: u8) ?*Charm {
+    if (lib_instance) |state| {
+        if (slot < MAX_CHARMS) return &state.charms[slot];
+    }
+    return null;
+}
+
+export fn load_charm(slot: u8, path: [*c]const u8) void {
+    if (getCharm(slot)) |c| {
+        if (c.model) |m| ray.UnloadModel(m);
+        c.model = null;
+        const path_slice = std.mem.span(path);
+        if (std.mem.eql(u8, path_slice, "default")) {
+            c.model = ray.LoadModelFromMesh(ray.GenMeshCube(8.0, 3.0, 12.0));
+        } else if (std.mem.eql(u8, path_slice, "cylinder")) {
+            c.model = ray.LoadModelFromMesh(ray.GenMeshCylinder(0.5, 12.0, 8));
+        } else if (std.mem.eql(u8, path_slice, "sphere")) {
+            c.model = ray.LoadModelFromMesh(ray.GenMeshSphere(1.0, 8, 8));
+        } else {
+            c.model = ray.LoadModel(path);
+        }
+    }
+}
+
+export fn set_charm_init(slot: u8, scale: f32, rot_x: f32, rot_y: f32, rot_z: f32, off_x: f32, off_y: f32, off_z: f32) void {
+    if (getCharm(slot)) |c| {
+        c.init_scale = scale;
+        c.init_rot = .{ .x = rot_x, .y = rot_y, .z = rot_z };
+        c.init_offset = .{ .x = off_x, .y = off_y, .z = off_z };
+    }
+}
+
+export fn set_charm_transform(slot: u8, px: f32, py: f32, pz: f32, tx: f32, ty: f32, tz: f32, ux: f32, uy: f32, uz: f32) void {
+    if (getCharm(slot)) |c| {
+        c.pos = .{ .x = px, .y = py, .z = pz };
+        c.target = .{ .x = tx, .y = ty, .z = tz };
+        c.up = .{ .x = ux, .y = uy, .z = uz };
+    }
+}
+
+export fn set_charm_visible(slot: u8, visible: bool) void {
+    if (getCharm(slot)) |c| {
+        c.visible = visible;
+    }
+}
+
+export fn unload_charm(slot: u8) void {
+    if (getCharm(slot)) |c| {
+        c.unload();
+    }
+}
+//}}} CHARM

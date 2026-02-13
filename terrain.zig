@@ -86,6 +86,13 @@ pub const TerrainConfig = struct {
     size: usize,
     base_map: ?[]const f32 = null,
     noise_weight: f32 = 1.0,
+    octaves: u8 = 6,
+    persistence: f32 = 0.5,
+    lacunarity: f32 = 2.0,
+    scale: f32 = 50.0,
+    world_start_x: f32 = 0.0,
+    world_start_z: f32 = 0.0,
+    world_step: f32 = 1.0,
 };
 
 pub fn generateTerrain(allocator: std.mem.Allocator, config: TerrainConfig) ![]f32 {
@@ -94,33 +101,24 @@ pub fn generateTerrain(allocator: std.mem.Allocator, config: TerrainConfig) ![]f
     errdefer allocator.free(terrain);
     const perm = try generatePermutation(allocator, config.seed);
     defer allocator.free(perm);
-    var min: f32 = std.math.inf(f32);
-    var max: f32 = -std.math.inf(f32);
+    var max_amp: f32 = 0.0;
+    {
+        var a: f32 = 1.0;
+        for (0..config.octaves) |_| {
+            max_amp += a;
+            a *= config.persistence;
+        }
+    }
     for (0..size) |y| {
         for (0..size) |x| {
-            const value = fbm(@floatFromInt(x), @floatFromInt(y), 6, 0.5, 2.0, 50.0, perm);
-            terrain[y * size + x] = value;
-            min = @min(min, value);
-            max = @max(max, value);
-        }
-    }
-    const range = if (max > min) max - min else 1.0;
-    var sum: f32 = 0.0;
-    for (terrain) |*value| {
-        value.* = (value.* - min) / range;
-        sum += value.*;
-    }
-    const mean = sum / @as(f32, @floatFromInt(terrain.len));
-    if (config.base_map) |base| {
-        const limit = @min(base.len, terrain.len);
-        for (0..limit) |i| {
-            const centered_noise = terrain[i] - mean;
-            terrain[i] = base[i] + (centered_noise * config.noise_weight);
-        }
-    } else {
-        if (config.noise_weight != 1.0) {
-            for (terrain) |*value| {
-                value.* *= config.noise_weight;
+            const wx = config.world_start_x + (@as(f32, @floatFromInt(x)) * config.world_step);
+            const wz = config.world_start_z + (@as(f32, @floatFromInt(y)) * config.world_step);
+            const raw = fbm(wx, wz, config.octaves, config.persistence, config.lacunarity, config.scale, perm);
+            const normed = (raw / max_amp) * config.noise_weight;
+            if (config.base_map) |base| {
+                terrain[y * size + x] = base[y * size + x] + normed;
+            } else {
+                terrain[y * size + x] = normed;
             }
         }
     }
@@ -299,25 +297,6 @@ pub fn getTerrainHeight(
     };
 }
 
-pub fn getBilinearHeight(terrain: []const f32, xz: @Vector(2, f32), size: usize) ?f32 {
-    const f_size = @as(f32, @floatFromInt(size));
-    if (@reduce(.Or, xz < @as(@Vector(2, f32), @splat(0))) or
-        @reduce(.Or, xz >= @as(@Vector(2, f32), @splat(f_size)))) return null;
-    const xz0 = @floor(xz);
-    const t_xz = xz - xz0;
-    const ix0 = @as(usize, @intFromFloat(xz0[0]));
-    const iz0 = @as(usize, @intFromFloat(xz0[1]));
-    const ix1 = @min(ix0 + 1, size - 1);
-    const iz1 = @min(iz0 + 1, size - 1);
-    const h00 = terrain[iz0 * size + ix0];
-    const h10 = terrain[iz0 * size + ix1];
-    const h01 = terrain[iz1 * size + ix0];
-    const h11 = terrain[iz1 * size + ix1];
-    const row0 = h00 + t_xz[0] * (h10 - h00);
-    const row1 = h01 + t_xz[0] * (h11 - h01);
-    return row0 + t_xz[1] * (row1 - row0);
-}
-
 fn rayTerrainIntersection(
     terrain: []const f32,
     ray_origin: @Vector(3, f32),
@@ -377,8 +356,28 @@ fn hsvToRgba(h: f32, s: f32, v: f32) Color {
     };
 }
 
-fn getTerrainColor(height: f32, water_level: f32, cube_height: f32) Color {
-    const v = (height - water_level) / cube_height;
+fn getBilinearSlope(terrain: []const f32, xz: @Vector(2, f32), size: usize) f32 {
+    const f_size = @as(f32, @floatFromInt(size));
+    if (@reduce(.Or, xz < @as(@Vector(2, f32), @splat(1.0))) or
+        @reduce(.Or, xz >= @as(@Vector(2, f32), @splat(f_size - 1.0)))) return 0.0;
+    const xz0 = @floor(xz);
+    const ix = @as(usize, @intFromFloat(xz0[0]));
+    const iz = @as(usize, @intFromFloat(xz0[1]));
+    const h_left = terrain[iz * size + (ix - 1)];
+    const h_right = terrain[iz * size + (ix + 1)];
+    const h_up = terrain[(iz - 1) * size + ix];
+    const h_down = terrain[(iz + 1) * size + ix];
+    const dx = (h_right - h_left) * 0.5;
+    const dz = (h_down - h_up) * 0.5;
+    return @sqrt(dx * dx + dz * dz);
+}
+
+fn getTerrainColorWithSlope(height: f32, water_normed: f32, slope: f32) Color {
+    const v = height - water_normed;
+    if (slope > 0.3) {
+        const gray = @min(0.6 + slope * 0.4, 0.9);
+        return hsvToRgba(30.0, 0.15, gray);
+    }
     if (v < -0.4) return hsvToRgba(40.0, 0.5, 0.0);
     if (v < 0.05) return hsvToRgba(40.0, 0.5, 0.8 + v * 2.0);
     if (v < 0.15) return hsvToRgba(95.0, 0.55 + v, 0.625 - v * 0.5);
@@ -386,6 +385,25 @@ fn getTerrainColor(height: f32, water_level: f32, cube_height: f32) Color {
     if (v < 0.55) return hsvToRgba(30.0, 0.6 - (v - 0.35) * 1.5, 0.3 + (v - 0.35) * 1.5);
     if (v < 1.55) return hsvToRgba(210.0, 0.1, 1.55 - v);
     return hsvToRgba(210.0, 0.1, 0.0);
+}
+
+pub fn getBilinearHeight(terrain: []const f32, xz: @Vector(2, f32), size: usize) ?f32 {
+    const f_size = @as(f32, @floatFromInt(size));
+    if (@reduce(.Or, xz < @as(@Vector(2, f32), @splat(0))) or
+        @reduce(.Or, xz >= @as(@Vector(2, f32), @splat(f_size)))) return null;
+    const xz0 = @floor(xz);
+    const t_xz = xz - xz0;
+    const ix0 = @as(usize, @intFromFloat(xz0[0]));
+    const iz0 = @as(usize, @intFromFloat(xz0[1]));
+    const ix1 = @min(ix0 + 1, size - 1);
+    const iz1 = @min(iz0 + 1, size - 1);
+    const h00 = terrain[iz0 * size + ix0];
+    const h10 = terrain[iz0 * size + ix1];
+    const h01 = terrain[iz1 * size + ix0];
+    const h11 = terrain[iz1 * size + ix1];
+    const row0 = h00 + t_xz[0] * (h10 - h00);
+    const row1 = h01 + t_xz[0] * (h11 - h01);
+    return row0 + t_xz[1] * (row1 - row0);
 }
 
 pub fn writeTextureBuffer(
@@ -396,19 +414,66 @@ pub fn writeTextureBuffer(
     water_level: f32,
     cube_height: f32,
 ) void {
-    const w = @as(usize, @intFromFloat(@as(f32, @floatFromInt(base_size)) * texture_scale));
+    const w = @as(usize, @intFromFloat(@as(f32, @floatFromInt(base_size - 1)) * texture_scale));
     const h = w;
     if (buffer.len < w * h) return;
+    const water_normed = water_level / cube_height;
     const inv_scale = 1.0 / texture_scale;
+    const f_base = @as(f32, @floatFromInt(base_size - 1));
+    const contrast: f32 = 0.5;
+    const max_effect: f32 = 0.1;
     for (0..h) |z| {
-        const fz = @as(f32, @floatFromInt(z)) * inv_scale;
+        const fz = @min((@as(f32, @floatFromInt(z)) + 0.5) * inv_scale, f_base);
         for (0..w) |x| {
-            const fx = @as(f32, @floatFromInt(x)) * inv_scale;
-            const height = getBilinearHeight(terrain, .{ fx, fz }, base_size);
-            const h_val = height orelse 0.0;
-            buffer[z * w + x] = getTerrainColor(h_val * cube_height, water_level, cube_height);
+            const fx = @min((@as(f32, @floatFromInt(x)) + 0.5) * inv_scale, f_base);
+            const h_val = getBilinearHeight(terrain, .{ fx, fz }, base_size) orelse 0.0;
+            const h_left = if (fx >= inv_scale) getBilinearHeight(terrain, .{ fx - inv_scale, fz }, base_size) orelse h_val else h_val;
+            const h_up = if (fz >= inv_scale) getBilinearHeight(terrain, .{ fx, fz - inv_scale }, base_size) orelse h_val else h_val;
+            const dx = h_val - h_left;
+            const dz = h_val - h_up;
+            const slope_raw = (dx + dz);
+            const s_mod = std.math.clamp(slope_raw * contrast, -max_effect, max_effect);
+            buffer[z * w + x] = getTerrainColor(h_val, water_normed, s_mod);
         }
     }
+}
+
+fn getTerrainColor(height: f32, water_normed: f32, s_mod: f32) Color {
+    const v = height - water_normed;
+    var h: f32 = 0.0;
+    var s: f32 = 0.0;
+    var val: f32 = 0.0;
+    if (v < -0.4) {
+        h = 40.0;
+        s = 0.5;
+        val = 0.0;
+    } else if (v < 0.05) {
+        h = 40.0;
+        s = 0.5;
+        val = 0.8 + v * 2.0;
+    } else if (v < 0.15) {
+        h = 95.0;
+        s = 0.55 + v;
+        val = 0.625 - v * 0.5;
+    } else if (v < 0.35) {
+        h = 110.0;
+        s = 0.6 + (v - 0.15) * 2.0;
+        val = 0.5 - (v - 0.15) * 0.7;
+    } else if (v < 0.55) {
+        h = 30.0;
+        s = 0.6 - (v - 0.35) * 1.5;
+        val = 0.3 + (v - 0.35) * 1.5;
+    } else if (v < 1.55) {
+        h = 210.0;
+        s = 0.1;
+        val = 1.55 - v;
+    } else {
+        h = 210.0;
+        s = 0.1;
+        val = 0.0;
+    }
+    s = std.math.clamp(s - s_mod, 0.0, 1.0);
+    return hsvToRgba(h, s, val);
 }
 
 //}}} UTIL
@@ -479,3 +544,80 @@ export fn get_foliage_len() usize {
 }
 
 //}}} WASM
+//{{{ MAIN
+
+pub fn main() !void {
+    const builtin = @import("builtin");
+    if (builtin.os.tag == .freestanding) return;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+    const stdout = std.io.getStdOut().writer();
+    const width = 64;
+    const high_res = 512;
+    const seed = 12345;
+    const config = TerrainConfig{
+        .seed = seed,
+        .size = width,
+        .noise_weight = 1.0,
+        .octaves = 6,
+        .persistence = 0.5,
+        .lacunarity = 2.0,
+        .scale = 15.0,
+    };
+    try stdout.print("\n--- Generating ascii map ({d}x{d}) ---\n", .{ width, width });
+    const map = try generateTerrain(allocator, config);
+    defer allocator.free(map);
+    const ramp = " .:-=+*#%@";
+    for (0..width) |y| {
+        for (0..width) |x| {
+            const val = map[y * width + x];
+            const clamped = @max(0.0, @min(1.0, val));
+            const idx = @as(usize, @intFromFloat(clamped * @as(f32, @floatFromInt(ramp.len - 1))));
+            try stdout.print("{c}{c}", .{ ramp[idx], ramp[idx] });
+        }
+        try stdout.print("\n", .{});
+    }
+    try stdout.print("\nGenerating high-res map.ppm ({d}x{d})...\n", .{ high_res, high_res });
+    var file_cfg = config;
+    file_cfg.size = high_res;
+    file_cfg.scale = 15.0 * (@as(f32, @floatFromInt(high_res)) / @as(f32, @floatFromInt(width)));
+    const file_map = try generateTerrain(allocator, file_cfg);
+    defer allocator.free(file_map);
+    var min_v: f32 = std.math.inf(f32);
+    var max_v: f32 = -std.math.inf(f32);
+    for (file_map) |v| {
+        min_v = @min(min_v, v);
+        max_v = @max(max_v, v);
+    }
+    const range = if (max_v > min_v) max_v - min_v else 1.0;
+    const file = try std.fs.cwd().createFile("map.ppm", .{});
+    defer file.close();
+    const writer = file.writer();
+    try writer.print("P3\n{d} {d}\n255\n", .{ high_res, high_res });
+    for (file_map) |raw_h| {
+        const h = (raw_h - min_v) / range;
+        var r: u8 = 0;
+        var g: u8 = 0;
+        var b: u8 = 0;
+        if (h < 0.3) {
+            r = 0;
+            g = 50;
+            b = @intFromFloat(h * 255.0 + 100.0);
+        } else if (h < 0.7) {
+            r = 50;
+            g = @intFromFloat(h * 200.0 + 50.0);
+            b = 50;
+        } else {
+            const gray: u8 = @intFromFloat(h * 255.0);
+            r = gray;
+            g = gray;
+            b = gray;
+        }
+        try writer.print("{d} {d} {d}\n", .{ r, g, b });
+    }
+
+    try stdout.print("Done! Saved to map.ppm\n", .{});
+}
+
+//}}} MAIN

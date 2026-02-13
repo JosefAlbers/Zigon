@@ -9,6 +9,7 @@
         "dungeon.zig",
         "object.zig",
         "chat.zig",
+        "city.zig",
         "main.py",
         "index.html",
         "README.md",

@@ -31,13 +31,14 @@ pub const ShapeType = enum {
 };
 
 pub const Kwargs = struct {
-    shape: ShapeType,
+    shape: ShapeType = .Line,
     color: ray.Color = ray.GRAY,
     radius: ?f32 = null,
     radius_tip: ?f32 = null,
-    thickness: ?f32 = null,
     roll: ?f32 = null,
     slices: ?i32 = null,
+    width: ?f32 = null,
+    height: ?f32 = null,
 };
 
 pub fn drawShape(base: ray.Vector3, tip: ray.Vector3, args: Kwargs) void {
@@ -63,7 +64,6 @@ pub fn drawShape(base: ray.Vector3, tip: ray.Vector3, args: Kwargs) void {
         .Cylinder, .Cone => {
             const r1 = args.radius orelse 0.1;
             const r2 = if (args.shape == .Cone) 0.0 else (args.radius_tip orelse r1);
-
             if (args.roll) |roll| {
                 ray.rlPushMatrix();
                 defer ray.rlPopMatrix();
@@ -90,8 +90,7 @@ pub fn drawShape(base: ray.Vector3, tip: ray.Vector3, args: Kwargs) void {
                 ray.rlRotatef(180, 1, 0, 0);
             }
             if (args.roll) |r| ray.rlRotatef(r, 0, 1, 0);
-            const thick = args.thickness orelse 0.1;
-            ray.DrawCube(ray.Vector3{ .x = 0, .y = length / 2, .z = 0 }, thick, length, thick, args.color);
+            ray.DrawCube(ray.Vector3{ .x = 0, .y = length / 2, .z = 0 }, args.width orelse args.radius orelse 0.1, args.height orelse length, args.radius orelse 0.1, args.color);
         },
     }
 }
@@ -107,7 +106,6 @@ const ShapeStep = struct {
 
 const ShapeSequence = struct {
     steps: []const ShapeStep,
-
     pub fn draw(self: ShapeSequence, root: ray.Vector3, t: f32) void {
         var prev_pos = root;
         for (self.steps) |step| {
@@ -131,7 +129,7 @@ const tree_sequence = ShapeSequence{ .steps = &[_]ShapeStep{
 } };
 
 const house_sequence = ShapeSequence{ .steps = &[_]ShapeStep{
-    .{ .offset = .{ .x = 0, .y = 1, .z = 0 }, .config = .{ .shape = .Cube, .thickness = 1.5, .color = ray.GRAY } },
+    .{ .offset = .{ .x = 0, .y = 1, .z = 0 }, .config = .{ .shape = .Cube, .radius = 1.5, .color = ray.GRAY } },
     .{ .offset = .{ .x = 0, .y = 2, .z = 0 }, .config = .{ .shape = .Cone, .radius = 1.5, .slices = 4, .color = ray.MAROON, .roll = 45 } },
 } };
 
@@ -181,43 +179,31 @@ pub fn main() !void {
     defer ray.CloseWindow();
     ray.SetTargetFPS(60);
     const camera = ray.Camera3D{ .position = .{ .x = 12, .y = 12, .z = 12 }, .target = .{ .x = 0, .y = 0, .z = 0 }, .up = .{ .x = 0, .y = 1, .z = 0 }, .fovy = 45, .projection = ray.CAMERA_PERSPECTIVE };
-
     var prng = std.rand.DefaultPrng.init(0);
     const random = prng.random();
-
     while (!ray.WindowShouldClose()) {
         const t = @as(f32, @floatCast(ray.GetTime()));
         const active = ray.IsKeyDown(ray.KEY_SPACE);
-
         ray.BeginDrawing();
         ray.ClearBackground(ray.SKYBLUE);
         ray.BeginMode3D(camera);
         ray.DrawGrid(20, 1.0);
-
-        // Spotlight
         drawShape(.{ .x = 0, .y = 0, .z = 0 }, .{ .x = 0, .y = 20, .z = 0 }, .{ .shape = .Cylinder, .radius = 0.5, .radius_tip = 0.55, .color = ray.Fade(ray.YELLOW, 0.4) });
-
-        // Environment
         rock_sequence.draw(.{ .x = -2, .y = 0, .z = -2 }, 0);
         tree_sequence.draw(.{ .x = 0, .y = 0, .z = 2 }, 0);
         house_sequence.draw(.{ .x = 2, .y = 0, .z = -2 }, 0);
         bird_sequence.draw(.{ .x = @sin(t) * 5.0, .y = 4.0 + @cos(t), .z = @cos(t) * 5.0 }, @sin(t * 15.0));
-
-        // Rain particles
         for (0..10) |_| {
             const rx = (random.float(f32) - 0.5) * 20.0;
             const rz = (random.float(f32) - 0.5) * 20.0;
             rain_sequence.draw(.{ .x = rx, .y = 10, .z = rz }, t);
         }
-
-        // Humans
         const h_pos = [_]ray.Vector3{ .{ .x = -4, .y = 0, .z = 4 }, .{ .x = -1, .y = 0, .z = 4 }, .{ .x = 2, .y = 0, .z = 4 }, .{ .x = 5, .y = 0, .z = 4 } };
         for (h_pos) |p| {
             human_sequence.draw(p, 0);
             feet_sequence.draw(p, if (active) 3 * @sin(t * 10) else @sin(t));
             sword_sequence.draw(.{ .x = p.x + 0.4, .y = p.y + 0.4, .z = p.z }, if (active) 3 * @sin(t * 10) else @sin(t));
         }
-
         ray.EndMode3D();
         ray.EndDrawing();
     }
@@ -234,32 +220,56 @@ pub const ObjectType = enum {
     Bird,
     Rain,
     Human,
-    pub fn fromString(s: []const u8) ObjectType {
-        return std.meta.stringToEnum(ObjectType, s) orelse .Beam;
-    }
+    Custom,
+    Model,
+
+    pub const CustomParams = Kwargs;
+    pub const ModelParams = struct {
+        model: ray.Model,
+        scale: f32 = 1.0,
+        tint: ray.Color = ray.WHITE,
+    };
 };
 
-pub fn drawObject(obj_type: ObjectType, x: f32, y: f32, z: f32, yaw: f32, t: f32) void {
-    const pos = ray.Vector3{ .x = x, .y = y, .z = z };
+pub fn drawObject(
+    obj_type: ObjectType,
+    pos: ray.Vector3,
+    rotation: ray.Vector3,
+    t: f32,
+    custom: ?ObjectType.CustomParams,
+    model_params: ?ObjectType.ModelParams,
+) void {
     ray.rlPushMatrix();
     defer ray.rlPopMatrix();
     ray.rlTranslatef(pos.x, pos.y, pos.z);
-    ray.rlRotatef(yaw, 0, 1, 0);
+    ray.rlRotatef(rotation.y, 0, 1, 0);
+    ray.rlRotatef(rotation.x, 1, 0, 0);
+    ray.rlRotatef(rotation.z, 0, 0, 1);
     const zero = ray.Vector3{ .x = 0, .y = 0, .z = 0 };
     switch (obj_type) {
+        .Model => {
+            if (model_params) |params| {
+                ray.rlScalef(params.scale, params.scale, params.scale);
+                ray.DrawModel(params.model, zero, 1.0, params.tint);
+            }
+        },
+        .Custom => {
+            const params = custom orelse return;
+            const h = params.height orelse 1.0;
+            const tip = ray.Vector3{ .x = 0, .y = h, .z = 0 };
+            drawShape(zero, tip, params);
+        },
         .Human => {
             human_sequence.draw(zero, 0);
             feet_sequence.draw(zero, 3 * @sin(t * 10));
-            sword_sequence.draw(.{ .x = zero.x + 0.4, .y = zero.y + 0.4, .z = zero.z }, 3 * @sin(t * 10));
+            sword_sequence.draw(.{ .x = 0.4, .y = 0.4, .z = 0 }, 3 * @sin(t * 10));
         },
-        .Rain => rain_sequence.draw(zero, @rem(t, 1.0) * @max(10, y)),
+        .Rain => rain_sequence.draw(zero, @rem(t, 1.0) * @max(10, pos.y)),
         .Bird => bird_sequence.draw(zero, @sin(t * 15.0)),
         .House => house_sequence.draw(zero, t),
         .Tree => tree_sequence.draw(zero, t),
         .Rock => rock_sequence.draw(zero, t),
-        .Beam => {
-            drawShape(.{ .x = 0, .y = 0, .z = 0 }, .{ .x = 0, .y = 20, .z = 0 }, .{ .shape = .Cylinder, .radius = 0.5, .radius_tip = 0.55, .color = ray.Fade(ray.YELLOW, 0.4) });
-        },
+        .Beam => drawShape(zero, .{ .x = 0, .y = 20, .z = 0 }, .{ .shape = .Cylinder, .radius = 0.5, .color = ray.Fade(ray.YELLOW, 0.4) }),
     }
 }
 
