@@ -720,11 +720,11 @@ KEY FINDINGS
 
 Zig-native FBM heightmap vs Python alternatives (same algorithm, 6 octaves):
 
-| Grid Size | Pure Python | NumPy | Zig (native) | Zig vs Python | Zig vs NumPy |
-|-----------|-------------|-------|--------------|---------------|--------------|
-| 64×64 | 146 ms | 1.4 ms | **1.8 ms** | 81× faster | 1.3× faster |
-| 128×128 | 481 ms | 4.5 ms | **4.5 ms** | 107× faster | 1.4× faster |
-| 256×256 | 1,919 ms | 18.9 ms | **12.7 ms** | 151× faster | 1.5× faster |
+| Grid Size | Pure Python | NumPy | Zig (native) |
+|-----------|-------------|-------|--------------|
+| 64×64 | 146 ms | 1.4 ms | **1.8 ms** |
+| 128×128 | 481 ms | 4.5 ms | **4.5 ms** |
+| 256×256 | 1,919 ms | 18.9 ms | **12.7 ms** |
 
 ### Rendering Stress Test
 
@@ -742,14 +742,14 @@ Frames per second under increasing entity load (128×128 terrain, vsync on):
 
 ### Memory & Deployment Size
 
-| Metric | Zigon | Python/NumPy | Ratio |
-|--------|-------|-------------|-------|
-| 128×128 terrain RAM | 64 KB | 3,215 KB | **50× less** |
-| 256×256 terrain RAM | 256 KB | 12,815 KB | **50× less** |
+| Metric | Zigon | Python/NumPy |
+|--------|-------|-------------|
+| 128×128 terrain RAM | 64 KB | 3,215 KB |
+| 256×256 terrain RAM | 256 KB | 12,815 KB |
 | Native library | 1.04 MB | — | — |
 | **WASM web build** | **386 KB** | — | — |
 
-For comparison: Unity WebGL is 30–50 MB, Godot Web is 15–25 MB, Electron is 150+ MB. Zigon's WASM bundle (compiled Zig + Raylib) is **386 KB** — you can host a complete 3D terrain explorer as a [static web page](https://josefalbers.github.io/Zigon/).
+For comparison, Unity WebGL is 30–50 MB, Godot Web is 15–25 MB, Electron is 150+ MB. Zigon's WASM bundle (compiled Zig + Raylib) is **386 KB**. With Zigon, you can host a complete 3D terrain explorer as a [static web page](https://josefalbers.github.io/Zigon/).
 
 ## Design Philosophy
 
