@@ -4,8 +4,6 @@ Zigon is a 3D procedural generation engine built in Zig with Raylib, designed fo
 
 [![Zigon Terrain](https://raw.githubusercontent.com/JosefAlbers/Zigon/main/assets/intro1.png)](https://josefalbers.github.io/Zigon/)
 
-[![Zigon Terrain](https://raw.githubusercontent.com/JosefAlbers/Zigon/main/assets/intro2.png)](https://josefalbers.github.io/Zigon/)
-
 [![Zigon Terrain](https://raw.githubusercontent.com/JosefAlbers/Zigon/main/assets/zigon.gif)](https://josefalbers.github.io/Zigon/)
 
 **[Live Web Demo](https://josefalbers.github.io/Zigon/)** • **[YouTube Demos](https://www.youtube.com/playlist?list=PL9S8vGIQARIjJsAg3WpS49gjECYQDEHje)** • **[PyPI Package](https://pypi.org/project/zigon/)**
