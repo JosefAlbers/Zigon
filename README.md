@@ -725,8 +725,6 @@ Zig-native FBM heightmap vs Python alternatives (same algorithm, 6 octaves):
 | 64×64 | 146 ms | 1.4 ms | **1.8 ms** | 81× faster | 1.3× faster |
 | 128×128 | 481 ms | 4.5 ms | **4.5 ms** | 107× faster | 1.4× faster |
 | 256×256 | 1,919 ms | 18.9 ms | **12.7 ms** | 151× faster | 1.5× faster |
-| 512×512 | ~8,000 ms* | 87 ms | **51.7 ms** | ~155× faster | 1.7× faster |
-| 1024×1024 | ~32,000 ms* | 395 ms | **214 ms** | ~150× faster | 1.8× faster |
 
 ### Rendering Stress Test
 
@@ -751,7 +749,7 @@ Frames per second under increasing entity load (128×128 terrain, vsync on):
 | Native library | 1.04 MB | — | — |
 | **WASM web build** | **386 KB** | — | — |
 
-For comparison: Unity WebGL is 30–50 MB, Godot Web is 15–25 MB, Electron is 150+ MB. Zigon's WASM bundle (compiled Zig + Raylib) is **386 KB** — you can host a complete 3D terrain explorer as a static web page. See example at https://josefalbers.github.io/Zigon/
+For comparison: Unity WebGL is 30–50 MB, Godot Web is 15–25 MB, Electron is 150+ MB. Zigon's WASM bundle (compiled Zig + Raylib) is **386 KB** — you can host a complete 3D terrain explorer as a [static web page](https://josefalbers.github.io/Zigon/).
 
 ## Design Philosophy
 
